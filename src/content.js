@@ -1,0 +1,14 @@
+const overlay = document.createElement('div');
+overlay.style.position = 'fixed';
+overlay.style.top = '100px';
+overlay.style.right = '20px';
+overlay.style.width = '250px';
+overlay.style.height = '80px';
+overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+overlay.style.color = 'white';
+overlay.style.padding = '10px';
+overlay.style.zIndex = '9999';
+overlay.style.borderRadius = '8px';
+overlay.style.fontFamily = 'Arial, sans-serif';
+overlay.innerText = 'ChatGPT Helper Extension';
+document.body.appendChild(overlay);
