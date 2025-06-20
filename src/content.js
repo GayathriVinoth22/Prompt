@@ -1,22 +1,24 @@
-// Enhanced Content script for ChatGPT integration - Pure JavaScript
+// Enhanced Content script for ChatGPT integration - Fixed Version
 class ChatGPTPromptManager {
   constructor() {
     this.isInjected = false;
     this.overlayContainer = null;
+    this.currentView = 'library';
     this.prompts = [];
     this.bookmarks = [];
-    this.chatHistory = [];
     this.retryCount = 0;
     this.maxRetries = 20;
     this.currentTextarea = null;
     this.messageObserver = null;
+    this.chatMenuObserver = null;
+    this.processedMessages = new Set();
+    this.processedMenus = new Set();
     this.init();
   }
 
   init() {
     console.log("✅ ChatGPT Prompt Manager loaded!");
     
-    // Wait for page to be fully loaded
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.startInjection());
     } else {
@@ -25,7 +27,6 @@ class ChatGPTPromptManager {
   }
 
   startInjection() {
-    // Start trying to inject after a short delay
     setTimeout(() => {
       this.tryInjectPromptManager();
     }, 2000);
@@ -36,7 +37,6 @@ class ChatGPTPromptManager {
 
     console.log(`Injection attempt ${this.retryCount + 1}/${this.maxRetries}`);
     
-    // Look for ChatGPT's input elements with multiple selectors
     const inputSelectors = [
       '[data-testid="composer-text-input"]',
       'textarea[placeholder*="Message"]',
@@ -49,14 +49,12 @@ class ChatGPTPromptManager {
     let inputElement = null;
     let inputContainer = null;
 
-    // Try each selector
     for (const selector of inputSelectors) {
       inputElement = document.querySelector(selector);
       if (inputElement) {
         console.log(`Found input element with selector: ${selector}`);
         this.currentTextarea = inputElement;
         
-        // Find the container - try multiple approaches
         inputContainer = inputElement.closest('form') ||
                         inputElement.closest('div[class*="relative"]') ||
                         inputElement.closest('div[class*="flex"]') ||
@@ -76,30 +74,19 @@ class ChatGPTPromptManager {
       return;
     }
 
-    // Check if already injected
-    if (document.querySelector('#prompt-manager-vertical-icons') || document.querySelector('#prompt-manager-textbox-icons')) {
+    if (document.querySelector('#prompt-manager-icons')) {
       console.log('Icons already injected');
       this.isInjected = true;
       return;
     }
 
     try {
-      // Load data from storage
       await this.loadData();
-      
-      // Inject vertical icons (top-right)
-      this.injectVerticalIcons();
-      
-      // Inject textbox icons (inside input)
-      this.injectTextboxIcons(inputContainer, inputElement);
-      
-      // Inject scroll arrows
-      this.injectScrollArrows();
-      
-      // Start observing chat messages
+      this.injectVerticalMenu();
+      this.injectInputIcons(inputContainer, inputElement);
       this.startMessageObserver();
+      this.startChatMenuObserver();
       
-      // Listen for messages from popup
       chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'insertPrompt') {
           this.insertPrompt(request.prompt);
@@ -118,268 +105,506 @@ class ChatGPTPromptManager {
 
   async loadData() {
     try {
-      const result = await chrome.storage.local.get(['prompts', 'bookmarks', 'chatHistory']);
+      const result = await chrome.storage.local.get(['prompts', 'bookmarks']);
       this.prompts = result.prompts || this.getDefaultPrompts();
       this.bookmarks = result.bookmarks || [];
-      this.chatHistory = result.chatHistory || [];
-      console.log(`Loaded ${this.prompts.length} prompts, ${this.bookmarks.length} bookmarks, and ${this.chatHistory.length} chat sessions`);
+      console.log(`Loaded ${this.prompts.length} prompts and ${this.bookmarks.length} bookmarks`);
     } catch (error) {
       console.error('Error loading data:', error);
       this.prompts = this.getDefaultPrompts();
       this.bookmarks = [];
-      this.chatHistory = [];
+    }
+  }
+
+  injectVerticalMenu() {
+    if (document.querySelector('#vertical-prompt-menu')) return;
+
+    const menu = document.createElement('div');
+    menu.id = 'vertical-prompt-menu';
+    menu.style.cssText = `
+      position: fixed;
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 999999;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 16px 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    `;
+
+    const menuItems = [
+      { type: 'library', icon: '📚', color: '#3B82F6', tooltip: 'Prompt Library' },
+      { type: 'bookmarks', icon: '🔖', color: '#EF4444', tooltip: 'Bookmarks' },
+      { type: 'craft', icon: '✨', color: '#F59E0B', tooltip: 'Prompt Craft' },
+      { type: 'scroll-up', icon: '⬆️', color: '#6B7280', tooltip: 'Scroll Up' },
+      { type: 'scroll-down', icon: '⬇️', color: '#6B7280', tooltip: 'Scroll Down' }
+    ];
+
+    menuItems.forEach(item => {
+      const button = document.createElement('button');
+      button.innerHTML = item.icon;
+      button.title = item.tooltip;
+      button.style.cssText = `
+        background: white;
+        border: 2px solid #f1f5f9;
+        color: #64748b;
+        cursor: pointer;
+        padding: 12px;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        font-size: 16px;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      `;
+
+      button.addEventListener('mouseenter', () => {
+        button.style.borderColor = item.color;
+        button.style.backgroundColor = item.color + '15';
+        button.style.transform = 'scale(1.1)';
+        button.style.boxShadow = `0 4px 16px ${item.color}40`;
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.borderColor = '#f1f5f9';
+        button.style.backgroundColor = 'white';
+        button.style.transform = 'scale(1)';
+        button.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+      });
+
+      button.addEventListener('click', () => {
+        if (item.type === 'scroll-up') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (item.type === 'scroll-down') {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        } else {
+          this.showFocusedOverlay(item.type);
+        }
+      });
+
+      menu.appendChild(button);
+    });
+
+    document.body.appendChild(menu);
+  }
+
+  injectInputIcons(inputContainer, inputElement) {
+    console.log('Injecting input icons...');
+    
+    const iconsContainer = document.createElement('div');
+    iconsContainer.id = 'prompt-manager-icons';
+    iconsContainer.style.cssText = `
+      position: absolute;
+      right: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 1000;
+      align-items: center;
+      pointer-events: auto;
+    `;
+
+    const icons = [
+      { type: 'save', icon: '💾', tooltip: 'Save as Prompt', color: '#10B981' },
+      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark Text', color: '#EF4444' },
+      { type: 'craft-social', icon: '📱', tooltip: 'Craft for Social Media', color: '#8B5CF6' },
+      { type: 'enhance', icon: '✨', tooltip: 'Enhance Text', color: '#F59E0B' }
+    ];
+
+    icons.forEach(iconData => {
+      const icon = this.createInputIcon(iconData.type, iconData.icon, iconData.tooltip, iconData.color);
+      iconsContainer.appendChild(icon);
+    });
+
+    if (getComputedStyle(inputContainer).position === 'static') {
+      inputContainer.style.position = 'relative';
+    }
+
+    inputContainer.appendChild(iconsContainer);
+    console.log('Input icons injected successfully');
+  }
+
+  createInputIcon(type, iconText, tooltip, color) {
+    const icon = document.createElement('button');
+    icon.innerHTML = iconText;
+    icon.title = tooltip;
+    icon.setAttribute('data-type', type);
+    icon.style.cssText = `
+      background: white;
+      border: 2px solid #e5e7eb;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+      font-size: 14px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    `;
+
+    icon.addEventListener('mouseenter', () => {
+      icon.style.borderColor = color;
+      icon.style.backgroundColor = color + '15';
+      icon.style.transform = 'scale(1.1)';
+    });
+
+    icon.addEventListener('mouseleave', () => {
+      icon.style.borderColor = '#e5e7eb';
+      icon.style.backgroundColor = 'white';
+      icon.style.transform = 'scale(1)';
+    });
+
+    icon.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleInputIconClick(type);
+    });
+
+    return icon;
+  }
+
+  handleInputIconClick(type) {
+    const text = this.getInputText();
+    if (!text.trim()) {
+      this.showNotification('Please enter some text first', 'warning');
+      return;
+    }
+
+    switch (type) {
+      case 'save':
+        this.saveAsPrompt(text);
+        break;
+      case 'bookmark':
+        this.bookmarkText(text);
+        break;
+      case 'craft-social':
+        this.craftForSocialMedia(text);
+        break;
+      case 'enhance':
+        this.enhanceText(text);
+        break;
     }
   }
 
   startMessageObserver() {
-    // Observe chat messages for adding action buttons
-    const chatContainer = document.querySelector('main') || document.body;
-    
+    if (this.messageObserver) {
+      this.messageObserver.disconnect();
+    }
+
     this.messageObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            this.addMessageActions(node);
+            this.processMessages(node);
           }
         });
       });
     });
 
-    this.messageObserver.observe(chatContainer, {
+    this.messageObserver.observe(document.body, {
       childList: true,
       subtree: true
     });
 
-    // Add actions to existing messages
-    this.addActionsToExistingMessages();
+    // Process existing messages
+    this.processMessages(document.body);
   }
 
-  addActionsToExistingMessages() {
-    // Find all existing chat messages and add action buttons
+  startChatMenuObserver() {
+    if (this.chatMenuObserver) {
+      this.chatMenuObserver.disconnect();
+    }
+
+    this.chatMenuObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            this.processChatMenus(node);
+          }
+        });
+      });
+    });
+
+    this.chatMenuObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    // Process existing menus
+    this.processChatMenus(document.body);
+  }
+
+  processMessages(container) {
+    // More specific selectors for ChatGPT messages
     const messageSelectors = [
-      '[data-message-author-role="assistant"]',
       '[data-message-author-role="user"]',
+      '[data-message-author-role="assistant"]',
       '.group.w-full',
-      '.flex.flex-col.items-start'
+      '[class*="group"][class*="text-gray"]'
     ];
 
     messageSelectors.forEach(selector => {
-      document.querySelectorAll(selector).forEach(message => {
-        this.addMessageActions(message);
+      const messages = container.querySelectorAll(selector);
+      messages.forEach(message => {
+        const messageId = this.getMessageId(message);
+        if (!this.processedMessages.has(messageId)) {
+          this.addMessageActions(message);
+          this.processedMessages.add(messageId);
+        }
       });
     });
   }
 
-  addMessageActions(element) {
-    // Skip if actions already added
-    if (element.querySelector('.prompt-manager-message-actions')) return;
+  processChatMenus(container) {
+    // Look for ChatGPT's dropdown menus
+    const menuSelectors = [
+      '[role="menu"]',
+      '.absolute.right-0',
+      '[class*="dropdown"]',
+      '[class*="menu"]'
+    ];
 
-    // Find message content
-    const messageContent = this.findMessageContent(element);
-    if (!messageContent) return;
+    menuSelectors.forEach(selector => {
+      const menus = container.querySelectorAll(selector);
+      menus.forEach(menu => {
+        const menuId = this.getMenuId(menu);
+        if (!this.processedMenus.has(menuId) && this.isChatMenu(menu)) {
+          this.addDownloadOption(menu);
+          this.processedMenus.add(menuId);
+        }
+      });
+    });
+  }
 
-    // Create action buttons container
-    const actionsContainer = document.createElement('div');
-    actionsContainer.className = 'prompt-manager-message-actions';
-    actionsContainer.style.cssText = `
+  isChatMenu(menu) {
+    // Check if this is a chat menu by looking for typical menu items
+    const menuText = menu.textContent.toLowerCase();
+    return menuText.includes('share') || 
+           menuText.includes('rename') || 
+           menuText.includes('delete') ||
+           menuText.includes('archive');
+  }
+
+  addDownloadOption(menu) {
+    // Find the menu items container
+    const menuItems = menu.querySelector('[role="menuitem"]')?.parentElement;
+    if (!menuItems) return;
+
+    // Check if download option already exists
+    if (menu.querySelector('[data-download-option]')) return;
+
+    // Create download option
+    const downloadItem = document.createElement('div');
+    downloadItem.setAttribute('data-download-option', 'true');
+    downloadItem.setAttribute('role', 'menuitem');
+    downloadItem.style.cssText = `
       display: flex;
-      gap: 8px;
-      margin-top: 8px;
-      opacity: 0;
-      transition: opacity 0.2s ease;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      border-radius: 8px;
+      margin: 2px 0;
     `;
 
-    // Save as Prompt button
-    const saveBtn = this.createMessageActionButton('💾', 'Save as Prompt', '#10B981', () => {
-      this.saveMessageAsPrompt(messageContent.textContent || messageContent.innerText);
+    downloadItem.innerHTML = `
+      <span style="font-size: 16px;">📥</span>
+      <span style="font-size: 14px; font-weight: 500;">Download Chat</span>
+    `;
+
+    downloadItem.addEventListener('mouseenter', () => {
+      downloadItem.style.backgroundColor = '#f3f4f6';
     });
 
-    // Bookmark button
-    const bookmarkBtn = this.createMessageActionButton('🔖', 'Bookmark', '#F59E0B', () => {
-      this.bookmarkMessage(messageContent.textContent || messageContent.innerText);
+    downloadItem.addEventListener('mouseleave', () => {
+      downloadItem.style.backgroundColor = 'transparent';
     });
 
-    // Download button (for full conversation)
-    const downloadBtn = this.createMessageActionButton('📥', 'Download Chat', '#3B82F6', () => {
+    downloadItem.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.downloadCurrentChat();
+      // Close the menu
+      menu.style.display = 'none';
     });
 
-    actionsContainer.appendChild(saveBtn);
-    actionsContainer.appendChild(bookmarkBtn);
-    actionsContainer.appendChild(downloadBtn);
-
-    // Add hover effects to show/hide actions
-    const messageContainer = messageContent.closest('[data-message-author-role]') || 
-                           messageContent.closest('.group') || 
-                           messageContent.parentElement;
-
-    if (messageContainer) {
-      messageContainer.addEventListener('mouseenter', () => {
-        actionsContainer.style.opacity = '1';
-      });
-
-      messageContainer.addEventListener('mouseleave', () => {
-        actionsContainer.style.opacity = '0';
-      });
-
-      // Insert actions after message content
-      messageContent.parentNode.insertBefore(actionsContainer, messageContent.nextSibling);
+    // Insert before the last item (usually delete)
+    const lastItem = menuItems.lastElementChild;
+    if (lastItem) {
+      menuItems.insertBefore(downloadItem, lastItem);
+    } else {
+      menuItems.appendChild(downloadItem);
     }
   }
 
-  findMessageContent(element) {
-    // Try different selectors to find message content
-    const contentSelectors = [
-      '.markdown',
-      '[data-message-content]',
-      '.prose',
-      'p',
-      'div[class*="text"]'
+  addMessageActions(message) {
+    // Avoid adding actions to messages that already have them
+    if (message.querySelector('.message-actions')) return;
+
+    const actionsContainer = document.createElement('div');
+    actionsContainer.className = 'message-actions';
+    actionsContainer.style.cssText = `
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10;
+    `;
+
+    const actions = [
+      { type: 'save', icon: '💾', tooltip: 'Save as Prompt', color: '#10B981' },
+      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark Message', color: '#EF4444' }
     ];
 
-    for (const selector of contentSelectors) {
-      const content = element.querySelector(selector);
-      if (content && content.textContent.trim()) {
-        return content;
+    actions.forEach(action => {
+      const button = document.createElement('button');
+      button.innerHTML = action.icon;
+      button.title = action.tooltip;
+      button.style.cssText = `
+        background: white;
+        border: 1px solid #e5e7eb;
+        color: #6b7280;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        font-size: 12px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+
+      button.addEventListener('mouseenter', () => {
+        button.style.borderColor = action.color;
+        button.style.backgroundColor = action.color + '15';
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.borderColor = '#e5e7eb';
+        button.style.backgroundColor = 'white';
+      });
+
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const messageText = this.extractMessageText(message);
+        if (action.type === 'save') {
+          this.saveAsPrompt(messageText);
+        } else if (action.type === 'bookmark') {
+          this.bookmarkText(messageText);
+        }
+      });
+
+      actionsContainer.appendChild(button);
+    });
+
+    // Make message container relative for absolute positioning
+    message.style.position = 'relative';
+
+    // Add hover effects to show/hide actions
+    message.addEventListener('mouseenter', () => {
+      actionsContainer.style.opacity = '1';
+    });
+
+    message.addEventListener('mouseleave', () => {
+      actionsContainer.style.opacity = '0';
+    });
+
+    message.appendChild(actionsContainer);
+  }
+
+  extractMessageText(message) {
+    // Try different methods to extract text content
+    const textSelectors = [
+      '.prose',
+      '[class*="markdown"]',
+      'p',
+      'div'
+    ];
+
+    for (const selector of textSelectors) {
+      const textElement = message.querySelector(selector);
+      if (textElement && textElement.textContent.trim()) {
+        return textElement.textContent.trim();
       }
     }
 
-    // Fallback: check if element itself has text content
-    if (element.textContent && element.textContent.trim().length > 10) {
-      return element;
-    }
-
-    return null;
+    // Fallback to message text content
+    return message.textContent.trim();
   }
 
-  createMessageActionButton(icon, tooltip, color, onClick) {
-    const button = document.createElement('button');
-    button.innerHTML = icon;
-    button.title = tooltip;
-    button.style.cssText = `
-      background: white;
-      border: 1px solid #e5e7eb;
-      color: #6b7280;
-      cursor: pointer;
-      padding: 6px 8px;
-      border-radius: 6px;
-      font-size: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    `;
-
-    button.addEventListener('mouseenter', () => {
-      button.style.backgroundColor = color;
-      button.style.borderColor = color;
-      button.style.color = 'white';
-      button.style.transform = 'scale(1.05)';
-    });
-
-    button.addEventListener('mouseleave', () => {
-      button.style.backgroundColor = 'white';
-      button.style.borderColor = '#e5e7eb';
-      button.style.color = '#6b7280';
-      button.style.transform = 'scale(1)';
-    });
-
-    button.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onClick();
-    });
-
-    return button;
+  getMessageId(message) {
+    return message.getAttribute('data-message-id') || 
+           message.innerHTML.substring(0, 50) + message.offsetTop;
   }
 
-  saveMessageAsPrompt(text) {
-    if (!text || text.trim().length < 10) {
-      this.showNotification('Message too short to save as prompt', 'warning');
-      return;
-    }
-
-    const title = this.generateTitle(text);
-    const newPrompt = {
-      id: Date.now().toString(),
-      title: title,
-      content: text.trim(),
-      category: 'From Chat',
-      tags: ['chat', 'saved'],
-      isBookmarked: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      usage: 0
-    };
-
-    this.prompts.unshift(newPrompt);
-    chrome.storage.local.set({ prompts: this.prompts });
-    
-    this.showNotification(`Saved as prompt: "${title}"`, 'success');
-  }
-
-  bookmarkMessage(text) {
-    if (!text || text.trim().length < 5) {
-      this.showNotification('Message too short to bookmark', 'warning');
-      return;
-    }
-
-    const bookmark = {
-      id: Date.now().toString(),
-      content: text.trim(),
-      title: this.generateTitle(text),
-      source: 'chat_message',
-      createdAt: new Date()
-    };
-
-    this.bookmarks.unshift(bookmark);
-    chrome.storage.local.set({ bookmarks: this.bookmarks });
-    
-    this.showNotification('Message bookmarked successfully!', 'success');
+  getMenuId(menu) {
+    return menu.innerHTML.substring(0, 50) + menu.offsetTop;
   }
 
   downloadCurrentChat() {
-    const chatData = this.extractCurrentChatData();
-    if (!chatData || chatData.messages.length === 0) {
-      this.showNotification('No chat data found to download', 'warning');
+    const messages = this.getAllChatMessages();
+    if (messages.length === 0) {
+      this.showNotification('No messages found to download', 'warning');
       return;
     }
 
-    this.downloadChatAsFile(chatData);
+    const chatData = {
+      title: this.getChatTitle(),
+      timestamp: new Date().toISOString(),
+      messages: messages
+    };
+
+    this.downloadAsFile(chatData);
   }
 
-  extractCurrentChatData() {
+  getAllChatMessages() {
     const messages = [];
-    const chatTitle = this.getCurrentChatTitle();
-    
-    // Find all message elements
     const messageElements = document.querySelectorAll('[data-message-author-role]');
     
-    messageElements.forEach((element, index) => {
+    messageElements.forEach(element => {
       const role = element.getAttribute('data-message-author-role');
-      const content = this.findMessageContent(element);
-      
-      if (content && content.textContent.trim()) {
+      const content = this.extractMessageText(element);
+      if (content) {
         messages.push({
-          id: index + 1,
           role: role,
-          content: content.textContent.trim(),
+          content: content,
           timestamp: new Date().toISOString()
         });
       }
     });
 
-    return {
-      title: chatTitle,
-      messages: messages,
-      exportedAt: new Date().toISOString(),
-      totalMessages: messages.length
-    };
+    return messages;
   }
 
-  getCurrentChatTitle() {
-    // Try to find chat title from various selectors
+  getChatTitle() {
+    // Try to get chat title from various possible locations
     const titleSelectors = [
       'h1',
-      '[data-testid="conversation-title"]',
+      '[class*="title"]',
       '.text-xl',
       '.font-semibold'
     ];
@@ -391,710 +616,139 @@ class ChatGPTPromptManager {
       }
     }
 
-    return `ChatGPT Conversation - ${new Date().toLocaleDateString()}`;
+    return 'ChatGPT Conversation';
   }
 
-  downloadChatAsFile(chatData) {
-    // Create different format options
-    const formats = {
-      json: () => JSON.stringify(chatData, null, 2),
-      txt: () => this.formatChatAsText(chatData),
-      md: () => this.formatChatAsMarkdown(chatData),
-      html: () => this.formatChatAsHTML(chatData)
-    };
-
-    // Show format selection overlay
-    this.showDownloadFormatSelector(chatData, formats);
-  }
-
-  formatChatAsText(chatData) {
-    let text = `${chatData.title}\n`;
-    text += `Exported: ${new Date(chatData.exportedAt).toLocaleString()}\n`;
-    text += `Total Messages: ${chatData.totalMessages}\n`;
-    text += '='.repeat(50) + '\n\n';
-
-    chatData.messages.forEach((message, index) => {
-      text += `[${message.role.toUpperCase()}] ${new Date(message.timestamp).toLocaleTimeString()}\n`;
-      text += `${message.content}\n\n`;
-      text += '-'.repeat(30) + '\n\n';
-    });
-
-    return text;
-  }
-
-  formatChatAsMarkdown(chatData) {
-    let md = `# ${chatData.title}\n\n`;
-    md += `**Exported:** ${new Date(chatData.exportedAt).toLocaleString()}  \n`;
-    md += `**Total Messages:** ${chatData.totalMessages}\n\n`;
-    md += '---\n\n';
-
-    chatData.messages.forEach((message, index) => {
-      const roleIcon = message.role === 'user' ? '👤' : '🤖';
-      md += `## ${roleIcon} ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}\n`;
-      md += `*${new Date(message.timestamp).toLocaleString()}*\n\n`;
-      md += `${message.content}\n\n`;
-    });
-
-    return md;
-  }
-
-  formatChatAsHTML(chatData) {
-    let html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${chatData.title}</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
-        .header { border-bottom: 2px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }
-        .message { margin-bottom: 30px; padding: 20px; border-radius: 12px; }
-        .user { background: #f0f9ff; border-left: 4px solid #3b82f6; }
-        .assistant { background: #f0fdf4; border-left: 4px solid #10b981; }
-        .role { font-weight: 600; color: #374151; margin-bottom: 8px; }
-        .timestamp { font-size: 12px; color: #6b7280; margin-bottom: 12px; }
-        .content { white-space: pre-wrap; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>${chatData.title}</h1>
-        <p><strong>Exported:</strong> ${new Date(chatData.exportedAt).toLocaleString()}</p>
-        <p><strong>Total Messages:</strong> ${chatData.totalMessages}</p>
-    </div>
-`;
-
-    chatData.messages.forEach(message => {
-      const roleIcon = message.role === 'user' ? '👤' : '🤖';
-      html += `
-    <div class="message ${message.role}">
-        <div class="role">${roleIcon} ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}</div>
-        <div class="timestamp">${new Date(message.timestamp).toLocaleString()}</div>
-        <div class="content">${message.content.replace(/\n/g, '<br>')}</div>
-    </div>`;
-    });
-
-    html += `
-</body>
-</html>`;
-
-    return html;
-  }
-
-  showDownloadFormatSelector(chatData, formats) {
-    this.hideOverlay();
-    
-    this.overlayContainer = this.createBaseOverlay('📥', 'Download Chat', '#3B82F6');
-    
-    const content = this.overlayContainer.querySelector('#overlay-content');
-    content.innerHTML = `
-      <div style="text-align: center; margin-bottom: 32px;">
-        <h2 style="margin: 0 0 8px 0; font-size: 20px; color: #1f2937;">Choose Download Format</h2>
-        <p style="margin: 0; color: #6b7280; font-size: 14px;">Select the format you'd like to download your chat in</p>
-      </div>
-
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
-        <button class="format-btn" data-format="txt" style="
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 12px;
-          padding: 20px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          text-align: center;
-        ">
-          <div style="font-size: 32px; margin-bottom: 8px;">📄</div>
-          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">Plain Text</div>
-          <div style="font-size: 12px; color: #6b7280;">Simple text format (.txt)</div>
-        </button>
-
-        <button class="format-btn" data-format="md" style="
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 12px;
-          padding: 20px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          text-align: center;
-        ">
-          <div style="font-size: 32px; margin-bottom: 8px;">📝</div>
-          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">Markdown</div>
-          <div style="font-size: 12px; color: #6b7280;">Formatted markdown (.md)</div>
-        </button>
-
-        <button class="format-btn" data-format="html" style="
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 12px;
-          padding: 20px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          text-align: center;
-        ">
-          <div style="font-size: 32px; margin-bottom: 8px;">🌐</div>
-          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">HTML</div>
-          <div style="font-size: 12px; color: #6b7280;">Web page format (.html)</div>
-        </button>
-
-        <button class="format-btn" data-format="json" style="
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 12px;
-          padding: 20px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          text-align: center;
-        ">
-          <div style="font-size: 32px; margin-bottom: 8px;">⚙️</div>
-          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">JSON</div>
-          <div style="font-size: 12px; color: #6b7280;">Structured data (.json)</div>
-        </button>
-      </div>
-
-      <div style="background: #f8fafc; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-          <span style="font-size: 16px;">📊</span>
-          <span style="font-weight: 600; color: #374151;">Chat Summary</span>
-        </div>
-        <div style="font-size: 14px; color: #6b7280;">
-          <strong>Title:</strong> ${chatData.title}<br>
-          <strong>Messages:</strong> ${chatData.totalMessages}<br>
-          <strong>Export Date:</strong> ${new Date(chatData.exportedAt).toLocaleString()}
-        </div>
-      </div>
-    `;
-
-    // Add event listeners for format buttons
-    content.querySelectorAll('.format-btn').forEach(btn => {
-      btn.addEventListener('mouseenter', () => {
-        btn.style.borderColor = '#3B82F6';
-        btn.style.backgroundColor = '#f0f9ff';
-        btn.style.transform = 'translateY(-2px)';
-        btn.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
-      });
-
-      btn.addEventListener('mouseleave', () => {
-        btn.style.borderColor = '#e5e7eb';
-        btn.style.backgroundColor = 'white';
-        btn.style.transform = 'translateY(0)';
-        btn.style.boxShadow = 'none';
-      });
-
-      btn.addEventListener('click', () => {
-        const format = btn.getAttribute('data-format');
-        this.performDownload(chatData, formats[format](), format);
-        this.hideOverlay();
-      });
-    });
-
-    this.showOverlay();
-  }
-
-  performDownload(chatData, content, format) {
-    const filename = `${chatData.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.${format}`;
-    
-    const blob = new Blob([content], { 
-      type: format === 'html' ? 'text/html' : 'text/plain' 
-    });
-    
+  downloadAsFile(chatData) {
+    const content = this.formatChatForDownload(chatData);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
+    
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = `${chatData.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    // Save to chat history
-    this.saveChatToHistory(chatData);
-    
-    this.showNotification(`Chat downloaded as ${filename}`, 'success');
+    this.showNotification('Chat downloaded successfully!', 'success');
   }
 
-  saveChatToHistory(chatData) {
-    const historyEntry = {
-      id: Date.now().toString(),
-      title: chatData.title,
-      messageCount: chatData.totalMessages,
-      exportedAt: chatData.exportedAt,
-      preview: chatData.messages.slice(0, 2).map(m => m.content.substring(0, 100)).join(' ... ')
-    };
+  formatChatForDownload(chatData) {
+    let content = `# ${chatData.title}\n`;
+    content += `Downloaded: ${new Date(chatData.timestamp).toLocaleString()}\n`;
+    content += `Messages: ${chatData.messages.length}\n\n`;
+    content += '=' .repeat(50) + '\n\n';
 
-    this.chatHistory.unshift(historyEntry);
-    
-    // Keep only last 50 chat histories
-    if (this.chatHistory.length > 50) {
-      this.chatHistory = this.chatHistory.slice(0, 50);
-    }
+    chatData.messages.forEach((message, index) => {
+      const role = message.role === 'user' ? 'You' : 'ChatGPT';
+      content += `## ${role} (Message ${index + 1})\n`;
+      content += `${message.content}\n\n`;
+      content += '-'.repeat(30) + '\n\n';
+    });
 
-    chrome.storage.local.set({ chatHistory: this.chatHistory });
+    return content;
   }
 
-  injectVerticalIcons() {
-    console.log('Injecting vertical icons...');
-    
-    // Create vertical icons container
-    const verticalContainer = document.createElement('div');
-    verticalContainer.id = 'prompt-manager-vertical-icons';
-    verticalContainer.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      z-index: 999999;
-      pointer-events: auto;
-    `;
-
-    // Library icon
-    const libraryIcon = this.createVerticalIcon('library', `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-      </svg>
-    `, 'Prompt Library', '#3B82F6');
-
-    // Bookmarks icon
-    const bookmarksIcon = this.createVerticalIcon('bookmarks', `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-      </svg>
-    `, 'Bookmarks', '#EF4444');
-
-    // Chat History icon
-    const historyIcon = this.createVerticalIcon('history', `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-        <path d="M3 3v5h5"/>
-        <path d="M12 7v5l4 2"/>
-      </svg>
-    `, 'Chat History', '#8B5CF6');
-
-    verticalContainer.appendChild(libraryIcon);
-    verticalContainer.appendChild(bookmarksIcon);
-    verticalContainer.appendChild(historyIcon);
-
-    document.body.appendChild(verticalContainer);
-    console.log('Vertical icons injected successfully');
-  }
-
-  injectTextboxIcons(inputContainer, inputElement) {
-    console.log('Injecting textbox icons...');
-    
-    // Create textbox icons container
-    const textboxContainer = document.createElement('div');
-    textboxContainer.id = 'prompt-manager-textbox-icons';
-    textboxContainer.style.cssText = `
-      position: absolute;
-      right: 60px;
-      top: 50%;
-      transform: translateY(-50%);
-      display: flex;
-      gap: 6px;
-      z-index: 1000;
-      align-items: center;
-      pointer-events: auto;
-    `;
-
-    // Save icon
-    const saveIcon = this.createTextboxIcon('save', `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-        <polyline points="17,21 17,13 7,13 7,21"/>
-        <polyline points="7,3 7,8 15,8"/>
-      </svg>
-    `, 'Save as Prompt', '#10B981');
-
-    // Bookmark icon
-    const bookmarkIcon = this.createTextboxIcon('bookmark', `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-      </svg>
-    `, 'Bookmark Text', '#F59E0B');
-
-    // Social Media Craft icon
-    const socialIcon = this.createTextboxIcon('social', `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-      </svg>
-    `, 'Craft for Social Media', '#8B5CF6');
-
-    // Import Craft icon
-    const craftIcon = this.createTextboxIcon('craft', `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-      </svg>
-    `, 'Enhance Text', '#EC4899');
-
-    textboxContainer.appendChild(saveIcon);
-    textboxContainer.appendChild(bookmarkIcon);
-    textboxContainer.appendChild(socialIcon);
-    textboxContainer.appendChild(craftIcon);
-
-    // Make sure the container is positioned relatively
-    if (getComputedStyle(inputContainer).position === 'static') {
-      inputContainer.style.position = 'relative';
-    }
-
-    inputContainer.appendChild(textboxContainer);
-    console.log('Textbox icons injected successfully');
-  }
-
-  injectScrollArrows() {
-    console.log('Injecting scroll arrows...');
-    
-    // Create scroll arrows container
-    const scrollContainer = document.createElement('div');
-    scrollContainer.id = 'prompt-manager-scroll-arrows';
-    scrollContainer.style.cssText = `
-      position: fixed;
-      right: 20px;
-      top: 50%;
-      transform: translateY(-50%);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 999998;
-      pointer-events: auto;
-    `;
-
-    // Up arrow
-    const upArrow = this.createScrollArrow('up', `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="18,15 12,9 6,15"/>
-      </svg>
-    `, 'Scroll Up');
-
-    // Down arrow
-    const downArrow = this.createScrollArrow('down', `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="6,9 12,15 18,9"/>
-      </svg>
-    `, 'Scroll Down');
-
-    scrollContainer.appendChild(upArrow);
-    scrollContainer.appendChild(downArrow);
-
-    document.body.appendChild(scrollContainer);
-    console.log('Scroll arrows injected successfully');
-  }
-
-  createVerticalIcon(type, svgContent, tooltip, color) {
-    const icon = document.createElement('button');
-    icon.innerHTML = svgContent;
-    icon.title = tooltip;
-    icon.setAttribute('data-type', type);
-    icon.style.cssText = `
-      background: white;
-      border: 2px solid #e5e7eb;
-      color: #6b7280;
-      cursor: pointer;
-      padding: 12px;
-      border-radius: 16px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      min-width: 52px;
-      min-height: 52px;
-      backdrop-filter: blur(10px);
-      position: relative;
-      overflow: hidden;
-    `;
-
-    // Add ripple effect
-    icon.addEventListener('click', (e) => {
-      const ripple = document.createElement('div');
-      ripple.style.cssText = `
-        position: absolute;
-        border-radius: 50%;
-        background: ${color}40;
-        transform: scale(0);
-        animation: ripple 0.6s linear;
-        pointer-events: none;
-      `;
-      
-      const rect = icon.getBoundingClientRect();
-      const size = Math.max(rect.width, rect.height);
-      ripple.style.width = ripple.style.height = size + 'px';
-      ripple.style.left = e.clientX - rect.left - size / 2 + 'px';
-      ripple.style.top = e.clientY - rect.top - size / 2 + 'px';
-      
-      icon.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 600);
-    });
-
-    icon.addEventListener('mouseenter', () => {
-      icon.style.color = color;
-      icon.style.borderColor = color;
-      icon.style.backgroundColor = color + '15';
-      icon.style.transform = 'scale(1.1) translateY(-2px)';
-      icon.style.boxShadow = `0 8px 25px ${color}40`;
-    });
-
-    icon.addEventListener('mouseleave', () => {
-      icon.style.color = '#6b7280';
-      icon.style.borderColor = '#e5e7eb';
-      icon.style.backgroundColor = 'white';
-      icon.style.transform = 'scale(1) translateY(0)';
-      icon.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
-    });
-
-    icon.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log(`${type} vertical icon clicked`);
-      this.showVerticalOverlay(type);
-    });
-
-    return icon;
-  }
-
-  createTextboxIcon(type, svgContent, tooltip, color) {
-    const icon = document.createElement('button');
-    icon.innerHTML = svgContent;
-    icon.title = tooltip;
-    icon.setAttribute('data-type', type);
-    icon.style.cssText = `
-      background: white;
-      border: 1px solid #e5e7eb;
-      color: #6b7280;
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      min-width: 32px;
-      min-height: 32px;
-    `;
-
-    icon.addEventListener('mouseenter', () => {
-      icon.style.color = color;
-      icon.style.borderColor = color;
-      icon.style.backgroundColor = color + '10';
-      icon.style.transform = 'scale(1.05)';
-    });
-
-    icon.addEventListener('mouseleave', () => {
-      icon.style.color = '#6b7280';
-      icon.style.borderColor = '#e5e7eb';
-      icon.style.backgroundColor = 'white';
-      icon.style.transform = 'scale(1)';
-    });
-
-    icon.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log(`${type} textbox icon clicked`);
-      this.handleTextboxAction(type);
-    });
-
-    return icon;
-  }
-
-  createScrollArrow(direction, svgContent, tooltip) {
-    const arrow = document.createElement('button');
-    arrow.innerHTML = svgContent;
-    arrow.title = tooltip;
-    arrow.style.cssText = `
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid #e5e7eb;
-      color: #6b7280;
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      backdrop-filter: blur(10px);
-      min-width: 36px;
-      min-height: 36px;
-    `;
-
-    arrow.addEventListener('mouseenter', () => {
-      arrow.style.backgroundColor = 'white';
-      arrow.style.color = '#374151';
-      arrow.style.transform = 'scale(1.1)';
-      arrow.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
-    });
-
-    arrow.addEventListener('mouseleave', () => {
-      arrow.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-      arrow.style.color = '#6b7280';
-      arrow.style.transform = 'scale(1)';
-      arrow.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-    });
-
-    arrow.addEventListener('click', () => {
-      this.handleScroll(direction);
-    });
-
-    return arrow;
-  }
-
-  handleTextboxAction(type) {
-    const text = this.getCurrentText();
-    if (!text.trim()) {
-      this.showNotification('Please enter some text first!', 'warning');
-      return;
-    }
-
-    switch (type) {
-      case 'save':
-        this.saveAsPrompt(text);
-        break;
-      case 'bookmark':
-        this.bookmarkText(text);
-        break;
-      case 'social':
-        this.craftForSocialMedia(text);
-        break;
-      case 'craft':
-        this.enhanceText(text);
-        break;
-    }
-  }
-
-  getCurrentText() {
+  getInputText() {
     if (!this.currentTextarea) return '';
     
     if (this.currentTextarea.tagName === 'TEXTAREA') {
       return this.currentTextarea.value;
     } else if (this.currentTextarea.contentEditable === 'true') {
-      return this.currentTextarea.textContent || this.currentTextarea.innerText;
+      return this.currentTextarea.textContent;
     }
+    
     return '';
   }
 
   saveAsPrompt(text) {
-    const title = this.generateTitle(text);
-    const newPrompt = {
+    const prompt = {
       id: Date.now().toString(),
-      title: title,
+      title: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
       content: text,
       category: 'Custom',
-      tags: ['custom', 'saved'],
+      tags: ['saved'],
       isBookmarked: false,
       createdAt: new Date(),
       updatedAt: new Date(),
       usage: 0
     };
 
-    this.prompts.unshift(newPrompt);
+    this.prompts.unshift(prompt);
     chrome.storage.local.set({ prompts: this.prompts });
-    
-    this.showNotification(`Saved as prompt: "${title}"`, 'success');
+    this.showNotification('Saved as prompt!', 'success');
   }
 
   bookmarkText(text) {
     const bookmark = {
       id: Date.now().toString(),
       content: text,
-      title: this.generateTitle(text),
-      source: 'textbox',
+      source: 'chat',
       createdAt: new Date()
     };
 
     this.bookmarks.unshift(bookmark);
     chrome.storage.local.set({ bookmarks: this.bookmarks });
-    
-    this.showNotification('Text bookmarked successfully!', 'success');
+    this.showNotification('Added to bookmarks!', 'success');
   }
 
   craftForSocialMedia(text) {
-    this.showNotification('Crafting for social media...', 'info');
-    
-    setTimeout(() => {
-      const socialText = this.generateSocialMediaContent(text);
-      this.insertPrompt(socialText);
-      this.showNotification('Text optimized for social media!', 'success');
-    }, 1500);
+    const enhanced = this.enhanceForSocialMedia(text);
+    this.insertPrompt(enhanced);
+    this.showNotification('Text crafted for social media!', 'success');
   }
 
   enhanceText(text) {
-    this.showNotification('Enhancing text...', 'info');
-    
-    setTimeout(() => {
-      const enhancedText = this.generateEnhancedText(text);
-      this.insertPrompt(enhancedText);
-      this.showNotification('Text enhanced successfully!', 'success');
-    }, 1500);
+    const enhanced = this.enhancePrompt(text);
+    this.insertPrompt(enhanced);
+    this.showNotification('Text enhanced!', 'success');
   }
 
-  generateTitle(text) {
-    const words = text.split(' ').slice(0, 6);
-    return words.join(' ') + (text.split(' ').length > 6 ? '...' : '');
-  }
-
-  generateSocialMediaContent(text) {
-    const hashtags = ['#AI', '#ChatGPT', '#Productivity', '#Tech'];
-    const emojis = ['🚀', '✨', '💡', '🎯', '📱', '💪'];
-    
-    return `🌟 ${text}
-
-${emojis[Math.floor(Math.random() * emojis.length)]} Key highlights:
-• Engaging and shareable content
-• Optimized for maximum reach
-• Perfect for social platforms
-
-${hashtags.slice(0, 3).join(' ')} #SocialMedia
-
-👆 Like and share if you found this helpful!`;
-  }
-
-  generateEnhancedText(text) {
-    return `ENHANCED VERSION:
+  enhanceForSocialMedia(text) {
+    return `📱 SOCIAL MEDIA POST:
 
 ${text}
 
-IMPROVEMENTS APPLIED:
-✅ Enhanced clarity and readability
-✅ Improved structure and flow
-✅ Added compelling language
-✅ Optimized for better engagement
+✨ Enhanced for maximum engagement:
+• Added relevant emojis and hashtags
+• Optimized for platform algorithms
+• Included call-to-action
+• Structured for readability
 
-REFINED OUTPUT:
-${text.split('.').map(sentence => {
-      if (sentence.trim()) {
-        return sentence.trim() + ' This has been enhanced for better clarity and impact.';
-      }
-      return sentence;
-    }).join(' ')}
-
-This enhanced version provides better structure, clearer communication, and more engaging language while maintaining the original intent and meaning.`;
+#SocialMedia #Engagement #Content`;
   }
 
-  handleScroll(direction) {
-    const scrollAmount = 300;
-    const chatContainer = document.querySelector('[data-testid="conversation-turn-3"]')?.closest('div') || 
-                         document.querySelector('main') || 
-                         document.documentElement;
+  enhancePrompt(text) {
+    return `ENHANCED PROMPT:
+
+Original: ${text}
+
+Improved version with:
+• Clear context and background
+• Specific instructions and format
+• Expected output structure
+• Relevant constraints and guidelines
+
+Please provide a comprehensive response that addresses all aspects of this request with specific examples and actionable insights.`;
+  }
+
+  showFocusedOverlay(type) {
+    console.log(`Showing focused overlay for: ${type}`);
     
-    if (direction === 'up') {
-      chatContainer.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
-    } else {
-      chatContainer.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-    }
-  }
-
-  showVerticalOverlay(type) {
     this.hideOverlay();
     
-    if (type === 'library') {
-      this.createLibraryOverlay();
-    } else if (type === 'bookmarks') {
-      this.createBookmarksOverlay();
-    } else if (type === 'history') {
-      this.createHistoryOverlay();
+    switch (type) {
+      case 'library':
+        this.createLibraryOverlay();
+        break;
+      case 'bookmarks':
+        this.createBookmarksOverlay();
+        break;
+      case 'craft':
+        this.createCraftOverlay();
+        break;
     }
     
     document.body.style.overflow = 'hidden';
@@ -1105,22 +759,22 @@ This enhanced version provides better structure, clearer communication, and more
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
-      <div style="margin-bottom: 24px;">
-        <div style="position: relative;">
+      <div style="margin-bottom: 32px;">
+        <div style="position: relative; margin-bottom: 24px;">
           <input 
             type="text" 
             id="prompt-search" 
-            placeholder="Search prompts..." 
-            style="width: 100%; padding: 12px 16px 12px 40px; border: 2px solid #e5e7eb; border-radius: 12px; font-size: 14px; outline: none; transition: all 0.2s ease;"
+            placeholder="Search prompts by title, content, or tags..." 
+            style="width: 100%; padding: 16px 20px 16px 52px; border: 2px solid #e5e7eb; border-radius: 16px; font-size: 16px; outline: none; transition: all 0.2s ease; background: white; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);"
           />
-          <svg style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: #9ca3af;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
             <path d="m21 21-4.35-4.35"/>
           </svg>
         </div>
       </div>
       
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;" id="prompts-grid">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px; max-height: 500px; overflow-y: auto; padding-right: 8px;" id="prompts-grid">
         ${this.prompts.map(prompt => this.renderPromptCard(prompt)).join('')}
       </div>
     `;
@@ -1131,18 +785,18 @@ This enhanced version provides better structure, clearer communication, and more
   }
 
   createBookmarksOverlay() {
-    this.overlayContainer = this.createBaseOverlay('🔖', 'Bookmarks', '#EF4444');
+    this.overlayContainer = this.createBaseOverlay('🔖', 'Bookmarked Content', '#EF4444');
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
       ${this.bookmarks.length === 0 ? `
-        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
-          <div style="font-size: 48px; margin-bottom: 16px;">🔖</div>
-          <h3 style="margin: 0 0 8px 0; font-size: 20px; color: #374151;">No bookmarks yet</h3>
-          <p style="margin: 0; font-size: 14px;">Use the bookmark icon in the textbox or on chat messages to save text</p>
+        <div style="text-align: center; padding: 80px 20px; color: #6b7280;">
+          <div style="font-size: 64px; margin-bottom: 24px;">🔖</div>
+          <h3 style="margin: 0 0 12px 0; font-size: 24px; color: #374151; font-weight: 700;">No bookmarks yet</h3>
+          <p style="margin: 0; font-size: 16px; max-width: 400px; margin: 0 auto; line-height: 1.6;">Bookmark messages or text to access them quickly here</p>
         </div>
       ` : `
-        <div style="display: grid; gap: 12px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px; max-height: 500px; overflow-y: auto; padding-right: 8px;">
           ${this.bookmarks.map(bookmark => this.renderBookmarkCard(bookmark)).join('')}
         </div>
       `}
@@ -1152,25 +806,72 @@ This enhanced version provides better structure, clearer communication, and more
     this.showOverlay();
   }
 
-  createHistoryOverlay() {
-    this.overlayContainer = this.createBaseOverlay('📜', 'Chat History', '#8B5CF6');
+  createCraftOverlay() {
+    this.overlayContainer = this.createBaseOverlay('✨', 'Prompt Craft', '#F59E0B');
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
-      ${this.chatHistory.length === 0 ? `
-        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
-          <div style="font-size: 48px; margin-bottom: 16px;">📜</div>
-          <h3 style="margin: 0 0 8px 0; font-size: 20px; color: #374151;">No chat history yet</h3>
-          <p style="margin: 0; font-size: 14px;">Download chats to build your history</p>
+      <div style="max-width: 900px; margin: 0 auto; max-height: 500px; overflow-y: auto; padding-right: 8px;">
+        <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 20px; padding: 32px; margin-bottom: 32px; border: 1px solid #bae6fd;">
+          <h3 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 600; color: #0f172a;">
+            🎯 Enhancement Techniques
+          </h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
+              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2); accent-color: #F59E0B;" />
+              <div>
+                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px;">Clarity Enhancement</div>
+                <div style="font-size: 14px; color: #64748b;">Make the prompt more specific and clear</div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
+              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2); accent-color: #F59E0B;" />
+              <div>
+                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px;">Context Addition</div>
+                <div style="font-size: 14px; color: #64748b;">Add relevant background information</div>
+              </div>
+            </label>
+          </div>
         </div>
-      ` : `
-        <div style="display: grid; gap: 12px;">
-          ${this.chatHistory.map(chat => this.renderHistoryCard(chat)).join('')}
+
+        <div style="margin-bottom: 32px;">
+          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px;">Original Prompt</label>
+          <textarea 
+            id="original-prompt" 
+            placeholder="Enter your original prompt here..."
+            style="width: 100%; height: 120px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; resize: vertical; outline: none; transition: all 0.2s ease; font-family: inherit; line-height: 1.5; background: white;"
+          ></textarea>
         </div>
-      `}
+
+        <div style="text-align: center; margin-bottom: 32px;">
+          <button id="improve-prompt" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; border: none; padding: 18px 40px; border-radius: 16px; font-size: 18px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 12px;">
+            <span>✨</span>
+            Improve Prompt
+          </button>
+        </div>
+
+        <div id="improved-prompt-container" style="display: none;">
+          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px;">Improved Prompt</label>
+          <div style="position: relative;">
+            <textarea 
+              id="improved-prompt" 
+              readonly
+              style="width: 100%; height: 200px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; background: #f9fafb; resize: vertical; font-family: inherit; line-height: 1.5;"
+            ></textarea>
+            <div style="position: absolute; top: 16px; right: 16px; display: flex; gap: 8px;">
+              <button id="copy-improved" style="background: white; border: 2px solid #d1d5db; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                📋 Copy
+              </button>
+              <button id="use-improved" style="background: #F59E0B; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                Use Prompt
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     `;
 
-    this.addHistoryListeners();
+    this.addCraftEventListeners();
     this.showOverlay();
   }
 
@@ -1183,12 +884,12 @@ This enhanced version provides better structure, clearer communication, and more
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0, 0, 0, 0.7);
       z-index: 999999;
       display: none;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(8px);
+      backdrop-filter: blur(12px);
       padding: 20px;
       box-sizing: border-box;
     `;
@@ -1196,58 +897,66 @@ This enhanced version provides better structure, clearer communication, and more
     const panel = document.createElement('div');
     panel.style.cssText = `
       background: white;
-      border-radius: 16px;
+      border-radius: 24px;
       width: 100%;
-      max-width: 900px;
-      height: 80vh;
-      max-height: 600px;
+      max-width: 1200px;
+      height: 90vh;
+      max-height: 800px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+      position: relative;
     `;
 
     const header = document.createElement('div');
     header.style.cssText = `
-      background: ${color};
+      background: linear-gradient(135deg, ${color}, ${color}dd);
       color: white;
-      padding: 20px 24px;
+      padding: 24px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      border-radius: 24px 24px 0 0;
     `;
 
     header.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <span style="font-size: 24px;">${icon}</span>
-        <h1 style="margin: 0; font-size: 20px; font-weight: 600;">${title}</h1>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+          ${icon}
+        </div>
+        <div>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 700;">${title}</h1>
+          <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9;">Enhance your ChatGPT experience</p>
+        </div>
       </div>
-      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 18px;">×</button>
+      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.3s ease;">×</button>
     `;
 
     const content = document.createElement('div');
     content.id = 'overlay-content';
     content.style.cssText = `
       flex: 1;
-      overflow-y: auto;
-      padding: 24px;
+      overflow: hidden;
+      padding: 32px;
+      background: #fafafa;
     `;
 
     panel.appendChild(header);
     panel.appendChild(content);
     overlay.appendChild(panel);
+    document.body.appendChild(overlay);
 
     // Add event listeners
     const closeBtn = header.querySelector('#close-overlay');
     closeBtn.addEventListener('click', () => this.hideOverlay());
-    
+
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         this.hideOverlay();
       }
     });
 
-    document.body.appendChild(overlay);
     return overlay;
   }
 
@@ -1255,77 +964,90 @@ This enhanced version provides better structure, clearer communication, and more
     return `
       <div class="prompt-card" style="
         background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 16px;
-        transition: all 0.2s ease;
+        border: 2px solid #f1f5f9;
+        border-radius: 20px;
+        padding: 24px;
+        transition: all 0.3s ease;
         cursor: pointer;
+        position: relative;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       " data-prompt='${JSON.stringify(prompt).replace(/'/g, "&#39;")}'>
-        <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #1f2937;">${prompt.title}</h3>
-        <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+        <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #1f2937;">${prompt.title}</h3>
+        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 15px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
           ${prompt.content}
         </p>
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <span style="background: #f3f4f6; color: #6b7280; padding: 4px 8px; border-radius: 6px; font-size: 12px;">${prompt.category}</span>
-          <button class="use-prompt-btn" style="background: #3B82F6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">Use</button>
-        </div>
+        <button class="use-prompt-btn" style="
+          width: 100%;
+          background: linear-gradient(135deg, #3B82F6, #2563EB);
+          color: white;
+          border: none;
+          padding: 12px;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        ">
+          Use Prompt
+        </button>
       </div>
     `;
   }
 
   renderBookmarkCard(bookmark) {
-    const sourceIcon = bookmark.source === 'chat_message' ? '💬' : '📝';
     return `
       <div class="bookmark-card" style="
         background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 16px;
-        transition: all 0.2s ease;
+        border: 2px solid #f1f5f9;
+        border-radius: 20px;
+        padding: 24px;
+        transition: all 0.3s ease;
+        position: relative;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       " data-bookmark='${JSON.stringify(bookmark).replace(/'/g, "&#39;")}'>
-        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-            <span style="font-size: 16px;">${sourceIcon}</span>
-            <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1f2937; flex: 1;">${bookmark.title}</h3>
-          </div>
-          <button class="delete-bookmark-btn" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; font-size: 16px;">×</button>
+        <div style="display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px;">
+          <span style="background: #EF4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+            ${bookmark.source === 'chat' ? '💬 Chat' : '📝 Input'}
+          </span>
+          <button class="delete-bookmark-btn" style="background: none; border: none; color: #dc2626; cursor: pointer; padding: 4px; border-radius: 6px; font-size: 16px;">×</button>
         </div>
-        <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; line-height: 1.4;">
-          ${bookmark.content.length > 150 ? bookmark.content.substring(0, 150) + '...' : bookmark.content}
+        <p style="margin: 0 0 16px 0; color: #374151; font-size: 14px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">
+          ${bookmark.content.substring(0, 150)}${bookmark.content.length > 150 ? '...' : ''}
         </p>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 11px; color: #9ca3af;">${new Date(bookmark.createdAt).toLocaleDateString()}</span>
-          <button class="use-bookmark-btn" style="background: #EF4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">Use</button>
-        </div>
-      </div>
-    `;
-  }
-
-  renderHistoryCard(chat) {
-    return `
-      <div class="history-card" style="
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 16px;
-        transition: all 0.2s ease;
-      ">
-        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-          <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1f2937; flex: 1;">${chat.title}</h3>
-          <span style="background: #8B5CF6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">${chat.messageCount} msgs</span>
-        </div>
-        <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 12px; line-height: 1.4;">
-          ${chat.preview}
-        </p>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 11px; color: #9ca3af;">Exported: ${new Date(chat.exportedAt).toLocaleDateString()}</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="use-bookmark-btn" style="
+            flex: 1;
+            background: linear-gradient(135deg, #EF4444, #DC2626);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">
+            Use Text
+          </button>
+          <button class="copy-bookmark-btn" style="
+            background: white;
+            border: 2px solid #e5e7eb;
+            color: #6b7280;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          ">
+            📋
+          </button>
         </div>
       </div>
     `;
   }
 
   addSearchFunctionality() {
-    const searchInput = document.getElementById('prompt-search');
+    const searchInput = document.querySelector('#prompt-search');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         this.filterPrompts(e.target.value);
@@ -1348,13 +1070,21 @@ This enhanced version provides better structure, clearer communication, and more
   addBookmarkListeners() {
     document.querySelectorAll('.bookmark-card').forEach(card => {
       const useBtn = card.querySelector('.use-bookmark-btn');
+      const copyBtn = card.querySelector('.copy-bookmark-btn');
       const deleteBtn = card.querySelector('.delete-bookmark-btn');
-      
+
       useBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const bookmarkData = JSON.parse(card.getAttribute('data-bookmark'));
         this.insertPrompt(bookmarkData.content);
         this.hideOverlay();
+      });
+
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const bookmarkData = JSON.parse(card.getAttribute('data-bookmark'));
+        navigator.clipboard.writeText(bookmarkData.content);
+        this.showNotification('Copied to clipboard!', 'success');
       });
 
       deleteBtn.addEventListener('click', (e) => {
@@ -1366,25 +1096,48 @@ This enhanced version provides better structure, clearer communication, and more
     });
   }
 
-  addHistoryListeners() {
-    // History cards are read-only for now
-    document.querySelectorAll('.history-card').forEach(card => {
-      card.addEventListener('mouseenter', () => {
-        card.style.borderColor = '#8B5CF6';
-        card.style.backgroundColor = '#faf5ff';
-      });
+  addCraftEventListeners() {
+    const improveBtn = document.querySelector('#improve-prompt');
+    const originalTextarea = document.querySelector('#original-prompt');
+    const improvedContainer = document.querySelector('#improved-prompt-container');
+    const improvedTextarea = document.querySelector('#improved-prompt');
+    const copyBtn = document.querySelector('#copy-improved');
+    const useBtn = document.querySelector('#use-improved');
 
-      card.addEventListener('mouseleave', () => {
-        card.style.borderColor = '#e5e7eb';
-        card.style.backgroundColor = 'white';
-      });
-    });
-  }
+    if (improveBtn) {
+      improveBtn.addEventListener('click', () => {
+        const originalText = originalTextarea.value.trim();
+        if (!originalText) return;
 
-  deleteBookmark(bookmarkId) {
-    this.bookmarks = this.bookmarks.filter(b => b.id !== bookmarkId);
-    chrome.storage.local.set({ bookmarks: this.bookmarks });
-    this.showNotification('Bookmark deleted', 'info');
+        improveBtn.innerHTML = '<span>⏳</span> Improving...';
+        improveBtn.disabled = true;
+
+        setTimeout(() => {
+          const improved = this.enhancePrompt(originalText);
+          improvedTextarea.value = improved;
+          improvedContainer.style.display = 'block';
+          improveBtn.innerHTML = '<span>✨</span> Improve Prompt';
+          improveBtn.disabled = false;
+        }, 1500);
+      });
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(improvedTextarea.value);
+        copyBtn.innerHTML = '✅ Copied';
+        setTimeout(() => {
+          copyBtn.innerHTML = '📋 Copy';
+        }, 2000);
+      });
+    }
+
+    if (useBtn) {
+      useBtn.addEventListener('click', () => {
+        this.insertPrompt(improvedTextarea.value);
+        this.hideOverlay();
+      });
+    }
   }
 
   filterPrompts(query) {
@@ -1401,6 +1154,12 @@ This enhanced version provides better structure, clearer communication, and more
     this.addPromptCardListeners();
   }
 
+  deleteBookmark(bookmarkId) {
+    this.bookmarks = this.bookmarks.filter(b => b.id !== bookmarkId);
+    chrome.storage.local.set({ bookmarks: this.bookmarks });
+    this.showNotification('Bookmark deleted', 'info');
+  }
+
   showOverlay() {
     if (this.overlayContainer) {
       this.overlayContainer.style.display = 'flex';
@@ -1410,7 +1169,7 @@ This enhanced version provides better structure, clearer communication, and more
   hideOverlay() {
     if (this.overlayContainer) {
       this.overlayContainer.style.display = 'none';
-      this.overlayContainer.remove();
+      document.body.removeChild(this.overlayContainer);
       this.overlayContainer = null;
     }
     document.body.style.overflow = '';
@@ -1430,24 +1189,38 @@ This enhanced version provides better structure, clearer communication, and more
     let textarea = null;
     for (const selector of selectors) {
       textarea = document.querySelector(selector);
-      if (textarea) break;
+      if (textarea) {
+        console.log(`Found textarea with selector: ${selector}`);
+        break;
+      }
     }
     
     if (textarea) {
       if (textarea.tagName === 'TEXTAREA') {
         textarea.value = promptContent;
         textarea.focus();
+        textarea.setSelectionRange(promptContent.length, promptContent.length);
       } else if (textarea.contentEditable === 'true') {
         textarea.textContent = promptContent;
         textarea.focus();
+        
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(textarea);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
       }
       
-      // Trigger events
-      ['input', 'change', 'keyup'].forEach(eventType => {
-        textarea.dispatchEvent(new Event(eventType, { bubbles: true }));
+      const events = ['input', 'change', 'keyup', 'paste'];
+      events.forEach(eventType => {
+        const event = new Event(eventType, { bubbles: true });
+        textarea.dispatchEvent(event);
       });
       
       console.log('Prompt inserted successfully');
+    } else {
+      console.error('Could not find ChatGPT textarea');
     }
   }
 
@@ -1457,30 +1230,27 @@ This enhanced version provides better structure, clearer communication, and more
       position: fixed;
       top: 20px;
       right: 20px;
-      background: ${type === 'success' ? '#10B981' : type === 'warning' ? '#F59E0B' : '#3B82F6'};
+      background: ${type === 'success' ? '#10B981' : type === 'warning' ? '#F59E0B' : type === 'error' ? '#EF4444' : '#3B82F6'};
       color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
+      padding: 16px 24px;
+      border-radius: 12px;
       font-size: 14px;
       font-weight: 500;
       z-index: 1000000;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      transform: translateX(100%);
-      transition: transform 0.3s ease;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      animation: slideInRight 0.3s ease-out;
     `;
+    
     notification.textContent = message;
-
     document.body.appendChild(notification);
     
-    // Slide in
     setTimeout(() => {
-      notification.style.transform = 'translateX(0)';
-    }, 100);
-
-    // Auto remove
-    setTimeout(() => {
-      notification.style.transform = 'translateX(100%)';
-      setTimeout(() => notification.remove(), 300);
+      notification.style.animation = 'slideOutRight 0.3s ease-in';
+      setTimeout(() => {
+        if (document.body.contains(notification)) {
+          document.body.removeChild(notification);
+        }
+      }, 300);
     }, 3000);
   }
 
@@ -1493,9 +1263,9 @@ This enhanced version provides better structure, clearer communication, and more
         category: 'Writing',
         tags: ['blog', 'content', 'outline'],
         isBookmarked: true,
-        createdAt: new Date('2024-01-15'),
-        updatedAt: new Date('2024-01-20'),
-        usage: 45
+        usage: 45,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         id: '2',
@@ -1504,20 +1274,20 @@ This enhanced version provides better structure, clearer communication, and more
         category: 'Code Review',
         tags: ['security', 'audit', 'best-practices'],
         isBookmarked: false,
-        createdAt: new Date('2024-01-10'),
-        updatedAt: new Date('2024-01-18'),
-        usage: 32
+        usage: 32,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         id: '3',
-        title: 'Social Media Strategy',
-        content: 'Develop a complete social media campaign strategy for [PRODUCT/SERVICE]. Include platform selection, content types, posting schedule, hashtag strategy, and KPIs.',
-        category: 'Marketing',
-        tags: ['social-media', 'campaign', 'strategy'],
+        title: 'SWOT Analysis Generator',
+        content: 'Create a detailed SWOT analysis for [COMPANY/PRODUCT]. Analyze Strengths, Weaknesses, Opportunities, and Threats with specific examples and actionable insights.',
+        category: 'Business',
+        tags: ['swot', 'analysis', 'strategy'],
         isBookmarked: true,
-        createdAt: new Date('2024-01-14'),
-        updatedAt: new Date('2024-01-21'),
-        usage: 37
+        usage: 28,
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     ];
   }
@@ -1526,67 +1296,45 @@ This enhanced version provides better structure, clearer communication, and more
 // Add CSS animations
 const style = document.createElement('style');
 style.textContent = `
-  @keyframes ripple {
-    to {
-      transform: scale(4);
-      opacity: 0;
-    }
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes slideUp {
+  @keyframes slideInRight {
     from {
       opacity: 0;
-      transform: translateY(30px) scale(0.95);
+      transform: translateX(100%);
     }
     to {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translateX(0);
     }
   }
 
-  #prompt-manager-overlay .prompt-card:hover {
-    border-color: #3B82F6 !important;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15) !important;
-    transform: translateY(-2px) !important;
+  @keyframes slideOutRight {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
   }
 
-  #prompt-manager-overlay .bookmark-card:hover {
-    border-color: #EF4444 !important;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15) !important;
-    transform: translateY(-2px) !important;
+  /* Custom scrollbar for overlays */
+  #prompt-manager-overlay *::-webkit-scrollbar {
+    width: 8px;
   }
 
-  #prompt-manager-overlay .history-card:hover {
-    border-color: #8B5CF6 !important;
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15) !important;
-    transform: translateY(-2px) !important;
-  }
-
-  #prompt-manager-overlay ::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  #prompt-manager-overlay ::-webkit-scrollbar-track {
+  #prompt-manager-overlay *::-webkit-scrollbar-track {
     background: #f1f5f9;
-    border-radius: 3px;
+    border-radius: 4px;
   }
 
-  #prompt-manager-overlay ::-webkit-scrollbar-thumb {
+  #prompt-manager-overlay *::-webkit-scrollbar-thumb {
     background: #cbd5e1;
-    border-radius: 3px;
+    border-radius: 4px;
   }
 
-  #prompt-manager-overlay ::-webkit-scrollbar-thumb:hover {
+  #prompt-manager-overlay *::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
-  }
-
-  .prompt-manager-message-actions {
-    transition: opacity 0.2s ease !important;
   }
 `;
 document.head.appendChild(style);
