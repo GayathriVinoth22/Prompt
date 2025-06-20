@@ -8,6 +8,7 @@ class ChatGPTPromptManager {
 
   init() {
     // Wait for ChatGPT to load
+    console.log("✅ content.js has been loaded!");
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.injectPromptManager());
     } else {
@@ -38,12 +39,20 @@ class ChatGPTPromptManager {
 
   createPromptButton() {
     // Find ChatGPT's input area
-    const inputContainer = document.querySelector('[data-testid="composer-text-input"]')?.parentElement?.parentElement;
-    if (!inputContainer) {
-      // Retry after a short delay if input not found
-      setTimeout(() => this.createPromptButton(), 1000);
-      return;
-    }
+    console.log("gfdsjdfj");
+    const tryInject = () => {
+      const input = document.querySelector('[data-testid="composer-text-input"]');
+      if (!input) {
+        setTimeout(tryInject, 1000);
+        return;
+      }
+    
+      if (document.querySelector('#prompt-manager-btn')) return; // avoid duplicates
+    
+      // inject button
+      this.injectFloatingButton(input);
+    };
+    tryInject();
 
     // Create floating prompt manager button
     const promptButton = document.createElement('button');
@@ -357,5 +366,9 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+window.ChatGPTPromptManager = ChatGPTPromptManager;
+
+
 // Initialize the prompt manager
 new ChatGPTPromptManager();
+
