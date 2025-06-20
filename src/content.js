@@ -5,9 +5,11 @@ class ChatGPTPromptManager {
     this.overlayContainer = null;
     this.prompts = [];
     this.bookmarks = [];
+    this.chatHistory = [];
     this.retryCount = 0;
     this.maxRetries = 20;
     this.currentTextarea = null;
+    this.messageObserver = null;
     this.init();
   }
 
@@ -94,6 +96,9 @@ class ChatGPTPromptManager {
       // Inject scroll arrows
       this.injectScrollArrows();
       
+      // Start observing chat messages
+      this.startMessageObserver();
+      
       // Listen for messages from popup
       chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'insertPrompt') {
@@ -113,15 +118,518 @@ class ChatGPTPromptManager {
 
   async loadData() {
     try {
-      const result = await chrome.storage.local.get(['prompts', 'bookmarks']);
+      const result = await chrome.storage.local.get(['prompts', 'bookmarks', 'chatHistory']);
       this.prompts = result.prompts || this.getDefaultPrompts();
       this.bookmarks = result.bookmarks || [];
-      console.log(`Loaded ${this.prompts.length} prompts and ${this.bookmarks.length} bookmarks`);
+      this.chatHistory = result.chatHistory || [];
+      console.log(`Loaded ${this.prompts.length} prompts, ${this.bookmarks.length} bookmarks, and ${this.chatHistory.length} chat sessions`);
     } catch (error) {
       console.error('Error loading data:', error);
       this.prompts = this.getDefaultPrompts();
       this.bookmarks = [];
+      this.chatHistory = [];
     }
+  }
+
+  startMessageObserver() {
+    // Observe chat messages for adding action buttons
+    const chatContainer = document.querySelector('main') || document.body;
+    
+    this.messageObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            this.addMessageActions(node);
+          }
+        });
+      });
+    });
+
+    this.messageObserver.observe(chatContainer, {
+      childList: true,
+      subtree: true
+    });
+
+    // Add actions to existing messages
+    this.addActionsToExistingMessages();
+  }
+
+  addActionsToExistingMessages() {
+    // Find all existing chat messages and add action buttons
+    const messageSelectors = [
+      '[data-message-author-role="assistant"]',
+      '[data-message-author-role="user"]',
+      '.group.w-full',
+      '.flex.flex-col.items-start'
+    ];
+
+    messageSelectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(message => {
+        this.addMessageActions(message);
+      });
+    });
+  }
+
+  addMessageActions(element) {
+    // Skip if actions already added
+    if (element.querySelector('.prompt-manager-message-actions')) return;
+
+    // Find message content
+    const messageContent = this.findMessageContent(element);
+    if (!messageContent) return;
+
+    // Create action buttons container
+    const actionsContainer = document.createElement('div');
+    actionsContainer.className = 'prompt-manager-message-actions';
+    actionsContainer.style.cssText = `
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    `;
+
+    // Save as Prompt button
+    const saveBtn = this.createMessageActionButton('💾', 'Save as Prompt', '#10B981', () => {
+      this.saveMessageAsPrompt(messageContent.textContent || messageContent.innerText);
+    });
+
+    // Bookmark button
+    const bookmarkBtn = this.createMessageActionButton('🔖', 'Bookmark', '#F59E0B', () => {
+      this.bookmarkMessage(messageContent.textContent || messageContent.innerText);
+    });
+
+    // Download button (for full conversation)
+    const downloadBtn = this.createMessageActionButton('📥', 'Download Chat', '#3B82F6', () => {
+      this.downloadCurrentChat();
+    });
+
+    actionsContainer.appendChild(saveBtn);
+    actionsContainer.appendChild(bookmarkBtn);
+    actionsContainer.appendChild(downloadBtn);
+
+    // Add hover effects to show/hide actions
+    const messageContainer = messageContent.closest('[data-message-author-role]') || 
+                           messageContent.closest('.group') || 
+                           messageContent.parentElement;
+
+    if (messageContainer) {
+      messageContainer.addEventListener('mouseenter', () => {
+        actionsContainer.style.opacity = '1';
+      });
+
+      messageContainer.addEventListener('mouseleave', () => {
+        actionsContainer.style.opacity = '0';
+      });
+
+      // Insert actions after message content
+      messageContent.parentNode.insertBefore(actionsContainer, messageContent.nextSibling);
+    }
+  }
+
+  findMessageContent(element) {
+    // Try different selectors to find message content
+    const contentSelectors = [
+      '.markdown',
+      '[data-message-content]',
+      '.prose',
+      'p',
+      'div[class*="text"]'
+    ];
+
+    for (const selector of contentSelectors) {
+      const content = element.querySelector(selector);
+      if (content && content.textContent.trim()) {
+        return content;
+      }
+    }
+
+    // Fallback: check if element itself has text content
+    if (element.textContent && element.textContent.trim().length > 10) {
+      return element;
+    }
+
+    return null;
+  }
+
+  createMessageActionButton(icon, tooltip, color, onClick) {
+    const button = document.createElement('button');
+    button.innerHTML = icon;
+    button.title = tooltip;
+    button.style.cssText = `
+      background: white;
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    `;
+
+    button.addEventListener('mouseenter', () => {
+      button.style.backgroundColor = color;
+      button.style.borderColor = color;
+      button.style.color = 'white';
+      button.style.transform = 'scale(1.05)';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.backgroundColor = 'white';
+      button.style.borderColor = '#e5e7eb';
+      button.style.color = '#6b7280';
+      button.style.transform = 'scale(1)';
+    });
+
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+
+    return button;
+  }
+
+  saveMessageAsPrompt(text) {
+    if (!text || text.trim().length < 10) {
+      this.showNotification('Message too short to save as prompt', 'warning');
+      return;
+    }
+
+    const title = this.generateTitle(text);
+    const newPrompt = {
+      id: Date.now().toString(),
+      title: title,
+      content: text.trim(),
+      category: 'From Chat',
+      tags: ['chat', 'saved'],
+      isBookmarked: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      usage: 0
+    };
+
+    this.prompts.unshift(newPrompt);
+    chrome.storage.local.set({ prompts: this.prompts });
+    
+    this.showNotification(`Saved as prompt: "${title}"`, 'success');
+  }
+
+  bookmarkMessage(text) {
+    if (!text || text.trim().length < 5) {
+      this.showNotification('Message too short to bookmark', 'warning');
+      return;
+    }
+
+    const bookmark = {
+      id: Date.now().toString(),
+      content: text.trim(),
+      title: this.generateTitle(text),
+      source: 'chat_message',
+      createdAt: new Date()
+    };
+
+    this.bookmarks.unshift(bookmark);
+    chrome.storage.local.set({ bookmarks: this.bookmarks });
+    
+    this.showNotification('Message bookmarked successfully!', 'success');
+  }
+
+  downloadCurrentChat() {
+    const chatData = this.extractCurrentChatData();
+    if (!chatData || chatData.messages.length === 0) {
+      this.showNotification('No chat data found to download', 'warning');
+      return;
+    }
+
+    this.downloadChatAsFile(chatData);
+  }
+
+  extractCurrentChatData() {
+    const messages = [];
+    const chatTitle = this.getCurrentChatTitle();
+    
+    // Find all message elements
+    const messageElements = document.querySelectorAll('[data-message-author-role]');
+    
+    messageElements.forEach((element, index) => {
+      const role = element.getAttribute('data-message-author-role');
+      const content = this.findMessageContent(element);
+      
+      if (content && content.textContent.trim()) {
+        messages.push({
+          id: index + 1,
+          role: role,
+          content: content.textContent.trim(),
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    return {
+      title: chatTitle,
+      messages: messages,
+      exportedAt: new Date().toISOString(),
+      totalMessages: messages.length
+    };
+  }
+
+  getCurrentChatTitle() {
+    // Try to find chat title from various selectors
+    const titleSelectors = [
+      'h1',
+      '[data-testid="conversation-title"]',
+      '.text-xl',
+      '.font-semibold'
+    ];
+
+    for (const selector of titleSelectors) {
+      const titleElement = document.querySelector(selector);
+      if (titleElement && titleElement.textContent.trim()) {
+        return titleElement.textContent.trim();
+      }
+    }
+
+    return `ChatGPT Conversation - ${new Date().toLocaleDateString()}`;
+  }
+
+  downloadChatAsFile(chatData) {
+    // Create different format options
+    const formats = {
+      json: () => JSON.stringify(chatData, null, 2),
+      txt: () => this.formatChatAsText(chatData),
+      md: () => this.formatChatAsMarkdown(chatData),
+      html: () => this.formatChatAsHTML(chatData)
+    };
+
+    // Show format selection overlay
+    this.showDownloadFormatSelector(chatData, formats);
+  }
+
+  formatChatAsText(chatData) {
+    let text = `${chatData.title}\n`;
+    text += `Exported: ${new Date(chatData.exportedAt).toLocaleString()}\n`;
+    text += `Total Messages: ${chatData.totalMessages}\n`;
+    text += '='.repeat(50) + '\n\n';
+
+    chatData.messages.forEach((message, index) => {
+      text += `[${message.role.toUpperCase()}] ${new Date(message.timestamp).toLocaleTimeString()}\n`;
+      text += `${message.content}\n\n`;
+      text += '-'.repeat(30) + '\n\n';
+    });
+
+    return text;
+  }
+
+  formatChatAsMarkdown(chatData) {
+    let md = `# ${chatData.title}\n\n`;
+    md += `**Exported:** ${new Date(chatData.exportedAt).toLocaleString()}  \n`;
+    md += `**Total Messages:** ${chatData.totalMessages}\n\n`;
+    md += '---\n\n';
+
+    chatData.messages.forEach((message, index) => {
+      const roleIcon = message.role === 'user' ? '👤' : '🤖';
+      md += `## ${roleIcon} ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}\n`;
+      md += `*${new Date(message.timestamp).toLocaleString()}*\n\n`;
+      md += `${message.content}\n\n`;
+    });
+
+    return md;
+  }
+
+  formatChatAsHTML(chatData) {
+    let html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${chatData.title}</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        .header { border-bottom: 2px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }
+        .message { margin-bottom: 30px; padding: 20px; border-radius: 12px; }
+        .user { background: #f0f9ff; border-left: 4px solid #3b82f6; }
+        .assistant { background: #f0fdf4; border-left: 4px solid #10b981; }
+        .role { font-weight: 600; color: #374151; margin-bottom: 8px; }
+        .timestamp { font-size: 12px; color: #6b7280; margin-bottom: 12px; }
+        .content { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>${chatData.title}</h1>
+        <p><strong>Exported:</strong> ${new Date(chatData.exportedAt).toLocaleString()}</p>
+        <p><strong>Total Messages:</strong> ${chatData.totalMessages}</p>
+    </div>
+`;
+
+    chatData.messages.forEach(message => {
+      const roleIcon = message.role === 'user' ? '👤' : '🤖';
+      html += `
+    <div class="message ${message.role}">
+        <div class="role">${roleIcon} ${message.role.charAt(0).toUpperCase() + message.role.slice(1)}</div>
+        <div class="timestamp">${new Date(message.timestamp).toLocaleString()}</div>
+        <div class="content">${message.content.replace(/\n/g, '<br>')}</div>
+    </div>`;
+    });
+
+    html += `
+</body>
+</html>`;
+
+    return html;
+  }
+
+  showDownloadFormatSelector(chatData, formats) {
+    this.hideOverlay();
+    
+    this.overlayContainer = this.createBaseOverlay('📥', 'Download Chat', '#3B82F6');
+    
+    const content = this.overlayContainer.querySelector('#overlay-content');
+    content.innerHTML = `
+      <div style="text-align: center; margin-bottom: 32px;">
+        <h2 style="margin: 0 0 8px 0; font-size: 20px; color: #1f2937;">Choose Download Format</h2>
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">Select the format you'd like to download your chat in</p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <button class="format-btn" data-format="txt" style="
+          background: white;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: center;
+        ">
+          <div style="font-size: 32px; margin-bottom: 8px;">📄</div>
+          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">Plain Text</div>
+          <div style="font-size: 12px; color: #6b7280;">Simple text format (.txt)</div>
+        </button>
+
+        <button class="format-btn" data-format="md" style="
+          background: white;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: center;
+        ">
+          <div style="font-size: 32px; margin-bottom: 8px;">📝</div>
+          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">Markdown</div>
+          <div style="font-size: 12px; color: #6b7280;">Formatted markdown (.md)</div>
+        </button>
+
+        <button class="format-btn" data-format="html" style="
+          background: white;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: center;
+        ">
+          <div style="font-size: 32px; margin-bottom: 8px;">🌐</div>
+          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">HTML</div>
+          <div style="font-size: 12px; color: #6b7280;">Web page format (.html)</div>
+        </button>
+
+        <button class="format-btn" data-format="json" style="
+          background: white;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: center;
+        ">
+          <div style="font-size: 32px; margin-bottom: 8px;">⚙️</div>
+          <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">JSON</div>
+          <div style="font-size: 12px; color: #6b7280;">Structured data (.json)</div>
+        </button>
+      </div>
+
+      <div style="background: #f8fafc; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <span style="font-size: 16px;">📊</span>
+          <span style="font-weight: 600; color: #374151;">Chat Summary</span>
+        </div>
+        <div style="font-size: 14px; color: #6b7280;">
+          <strong>Title:</strong> ${chatData.title}<br>
+          <strong>Messages:</strong> ${chatData.totalMessages}<br>
+          <strong>Export Date:</strong> ${new Date(chatData.exportedAt).toLocaleString()}
+        </div>
+      </div>
+    `;
+
+    // Add event listeners for format buttons
+    content.querySelectorAll('.format-btn').forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        btn.style.borderColor = '#3B82F6';
+        btn.style.backgroundColor = '#f0f9ff';
+        btn.style.transform = 'translateY(-2px)';
+        btn.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        btn.style.borderColor = '#e5e7eb';
+        btn.style.backgroundColor = 'white';
+        btn.style.transform = 'translateY(0)';
+        btn.style.boxShadow = 'none';
+      });
+
+      btn.addEventListener('click', () => {
+        const format = btn.getAttribute('data-format');
+        this.performDownload(chatData, formats[format](), format);
+        this.hideOverlay();
+      });
+    });
+
+    this.showOverlay();
+  }
+
+  performDownload(chatData, content, format) {
+    const filename = `${chatData.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${new Date().toISOString().split('T')[0]}.${format}`;
+    
+    const blob = new Blob([content], { 
+      type: format === 'html' ? 'text/html' : 'text/plain' 
+    });
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Save to chat history
+    this.saveChatToHistory(chatData);
+    
+    this.showNotification(`Chat downloaded as ${filename}`, 'success');
+  }
+
+  saveChatToHistory(chatData) {
+    const historyEntry = {
+      id: Date.now().toString(),
+      title: chatData.title,
+      messageCount: chatData.totalMessages,
+      exportedAt: chatData.exportedAt,
+      preview: chatData.messages.slice(0, 2).map(m => m.content.substring(0, 100)).join(' ... ')
+    };
+
+    this.chatHistory.unshift(historyEntry);
+    
+    // Keep only last 50 chat histories
+    if (this.chatHistory.length > 50) {
+      this.chatHistory = this.chatHistory.slice(0, 50);
+    }
+
+    chrome.storage.local.set({ chatHistory: this.chatHistory });
   }
 
   injectVerticalIcons() {
@@ -156,8 +664,18 @@ class ChatGPTPromptManager {
       </svg>
     `, 'Bookmarks', '#EF4444');
 
+    // Chat History icon
+    const historyIcon = this.createVerticalIcon('history', `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+        <path d="M12 7v5l4 2"/>
+      </svg>
+    `, 'Chat History', '#8B5CF6');
+
     verticalContainer.appendChild(libraryIcon);
     verticalContainer.appendChild(bookmarksIcon);
+    verticalContainer.appendChild(historyIcon);
 
     document.body.appendChild(verticalContainer);
     console.log('Vertical icons injected successfully');
@@ -482,6 +1000,7 @@ class ChatGPTPromptManager {
       id: Date.now().toString(),
       content: text,
       title: this.generateTitle(text),
+      source: 'textbox',
       createdAt: new Date()
     };
 
@@ -574,6 +1093,8 @@ This enhanced version provides better structure, clearer communication, and more
       this.createLibraryOverlay();
     } else if (type === 'bookmarks') {
       this.createBookmarksOverlay();
+    } else if (type === 'history') {
+      this.createHistoryOverlay();
     }
     
     document.body.style.overflow = 'hidden';
@@ -618,7 +1139,7 @@ This enhanced version provides better structure, clearer communication, and more
         <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
           <div style="font-size: 48px; margin-bottom: 16px;">🔖</div>
           <h3 style="margin: 0 0 8px 0; font-size: 20px; color: #374151;">No bookmarks yet</h3>
-          <p style="margin: 0; font-size: 14px;">Use the bookmark icon in the textbox to save text</p>
+          <p style="margin: 0; font-size: 14px;">Use the bookmark icon in the textbox or on chat messages to save text</p>
         </div>
       ` : `
         <div style="display: grid; gap: 12px;">
@@ -628,6 +1149,28 @@ This enhanced version provides better structure, clearer communication, and more
     `;
 
     this.addBookmarkListeners();
+    this.showOverlay();
+  }
+
+  createHistoryOverlay() {
+    this.overlayContainer = this.createBaseOverlay('📜', 'Chat History', '#8B5CF6');
+    
+    const content = this.overlayContainer.querySelector('#overlay-content');
+    content.innerHTML = `
+      ${this.chatHistory.length === 0 ? `
+        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
+          <div style="font-size: 48px; margin-bottom: 16px;">📜</div>
+          <h3 style="margin: 0 0 8px 0; font-size: 20px; color: #374151;">No chat history yet</h3>
+          <p style="margin: 0; font-size: 14px;">Download chats to build your history</p>
+        </div>
+      ` : `
+        <div style="display: grid; gap: 12px;">
+          ${this.chatHistory.map(chat => this.renderHistoryCard(chat)).join('')}
+        </div>
+      `}
+    `;
+
+    this.addHistoryListeners();
     this.showOverlay();
   }
 
@@ -731,6 +1274,7 @@ This enhanced version provides better structure, clearer communication, and more
   }
 
   renderBookmarkCard(bookmark) {
+    const sourceIcon = bookmark.source === 'chat_message' ? '💬' : '📝';
     return `
       <div class="bookmark-card" style="
         background: white;
@@ -740,15 +1284,41 @@ This enhanced version provides better structure, clearer communication, and more
         transition: all 0.2s ease;
       " data-bookmark='${JSON.stringify(bookmark).replace(/'/g, "&#39;")}'>
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-          <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1f2937; flex: 1;">${bookmark.title}</h3>
+          <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+            <span style="font-size: 16px;">${sourceIcon}</span>
+            <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1f2937; flex: 1;">${bookmark.title}</h3>
+          </div>
           <button class="delete-bookmark-btn" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; font-size: 16px;">×</button>
         </div>
         <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; line-height: 1.4;">
-          ${bookmark.content}
+          ${bookmark.content.length > 150 ? bookmark.content.substring(0, 150) + '...' : bookmark.content}
         </p>
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size: 11px; color: #9ca3af;">${new Date(bookmark.createdAt).toLocaleDateString()}</span>
           <button class="use-bookmark-btn" style="background: #EF4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">Use</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderHistoryCard(chat) {
+    return `
+      <div class="history-card" style="
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+        transition: all 0.2s ease;
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+          <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1f2937; flex: 1;">${chat.title}</h3>
+          <span style="background: #8B5CF6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">${chat.messageCount} msgs</span>
+        </div>
+        <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 12px; line-height: 1.4;">
+          ${chat.preview}
+        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 11px; color: #9ca3af;">Exported: ${new Date(chat.exportedAt).toLocaleDateString()}</span>
         </div>
       </div>
     `;
@@ -792,6 +1362,21 @@ This enhanced version provides better structure, clearer communication, and more
         const bookmarkData = JSON.parse(card.getAttribute('data-bookmark'));
         this.deleteBookmark(bookmarkData.id);
         card.remove();
+      });
+    });
+  }
+
+  addHistoryListeners() {
+    // History cards are read-only for now
+    document.querySelectorAll('.history-card').forEach(card => {
+      card.addEventListener('mouseenter', () => {
+        card.style.borderColor = '#8B5CF6';
+        card.style.backgroundColor = '#faf5ff';
+      });
+
+      card.addEventListener('mouseleave', () => {
+        card.style.borderColor = '#e5e7eb';
+        card.style.backgroundColor = 'white';
       });
     });
   }
@@ -976,6 +1561,12 @@ style.textContent = `
     transform: translateY(-2px) !important;
   }
 
+  #prompt-manager-overlay .history-card:hover {
+    border-color: #8B5CF6 !important;
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15) !important;
+    transform: translateY(-2px) !important;
+  }
+
   #prompt-manager-overlay ::-webkit-scrollbar {
     width: 6px;
   }
@@ -992,6 +1583,10 @@ style.textContent = `
 
   #prompt-manager-overlay ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
+  }
+
+  .prompt-manager-message-actions {
+    transition: opacity 0.2s ease !important;
   }
 `;
 document.head.appendChild(style);
