@@ -1,4 +1,4 @@
-// Enhanced Content script for ChatGPT integration - Fixed Version
+// Enhanced Content script for ChatGPT integration - Minimal Design
 class ChatGPTPromptManager {
   constructor() {
     this.isInjected = false;
@@ -124,26 +124,26 @@ class ChatGPTPromptManager {
     menu.style.cssText = `
       position: fixed;
       top: 50%;
-      right: 20px;
+      right: 16px;
       transform: translateY(-50%);
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
       z-index: 999999;
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      padding: 16px 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(8px);
+      border-radius: 12px;
+      padding: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.3);
     `;
 
     const menuItems = [
-      { type: 'library', icon: '📚', color: '#3B82F6', tooltip: 'Prompt Library' },
-      { type: 'bookmarks', icon: '🔖', color: '#EF4444', tooltip: 'Bookmarks' },
-      { type: 'craft', icon: '✨', color: '#F59E0B', tooltip: 'Prompt Craft' },
-      { type: 'scroll-up', icon: '⬆️', color: '#6B7280', tooltip: 'Scroll Up' },
-      { type: 'scroll-down', icon: '⬇️', color: '#6B7280', tooltip: 'Scroll Down' }
+      { type: 'library', icon: '📚', tooltip: 'Library' },
+      { type: 'bookmarks', icon: '🔖', tooltip: 'Bookmarks' },
+      { type: 'craft', icon: '✨', tooltip: 'Craft' },
+      { type: 'scroll-up', icon: '↑', tooltip: 'Scroll Up' },
+      { type: 'scroll-down', icon: '↓', tooltip: 'Scroll Down' }
     ];
 
     menuItems.forEach(item => {
@@ -152,40 +152,39 @@ class ChatGPTPromptManager {
       button.title = item.tooltip;
       button.style.cssText = `
         background: white;
-        border: 2px solid #f1f5f9;
-        color: #64748b;
+        border: 1px solid #e5e7eb;
+        color: #374151;
         cursor: pointer;
-        padding: 12px;
-        border-radius: 12px;
-        transition: all 0.3s ease;
-        font-size: 16px;
-        width: 48px;
-        height: 48px;
+        padding: 8px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        font-size: 14px;
+        width: 36px;
+        height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        font-weight: 600;
       `;
 
       button.addEventListener('mouseenter', () => {
-        button.style.borderColor = item.color;
-        button.style.backgroundColor = item.color + '15';
-        button.style.transform = 'scale(1.1)';
-        button.style.boxShadow = `0 4px 16px ${item.color}40`;
+        button.style.backgroundColor = '#f3f4f6';
+        button.style.transform = 'scale(1.05)';
+        button.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
       });
 
       button.addEventListener('mouseleave', () => {
-        button.style.borderColor = '#f1f5f9';
         button.style.backgroundColor = 'white';
         button.style.transform = 'scale(1)';
-        button.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+        button.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
       });
 
       button.addEventListener('click', () => {
         if (item.type === 'scroll-up') {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          this.scrollChatToTop();
         } else if (item.type === 'scroll-down') {
-          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          this.scrollChatToBottom();
         } else {
           this.showFocusedOverlay(item.type);
         }
@@ -197,6 +196,49 @@ class ChatGPTPromptManager {
     document.body.appendChild(menu);
   }
 
+  scrollChatToTop() {
+    // Find the main chat container
+    const chatContainer = this.findChatContainer();
+    if (chatContainer) {
+      chatContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      // Fallback to window scroll
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  scrollChatToBottom() {
+    // Find the main chat container
+    const chatContainer = this.findChatContainer();
+    if (chatContainer) {
+      chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+    } else {
+      // Fallback to window scroll
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+  }
+
+  findChatContainer() {
+    // Try multiple selectors to find the chat container
+    const selectors = [
+      '[class*="conversation"]',
+      '[class*="chat"]',
+      'main',
+      '[role="main"]',
+      '.flex-1.overflow-hidden',
+      '[class*="overflow-y-auto"]'
+    ];
+
+    for (const selector of selectors) {
+      const container = document.querySelector(selector);
+      if (container && container.scrollHeight > container.clientHeight) {
+        return container;
+      }
+    }
+
+    return null;
+  }
+
   injectInputIcons(inputContainer, inputElement) {
     console.log('Injecting input icons...');
     
@@ -204,25 +246,25 @@ class ChatGPTPromptManager {
     iconsContainer.id = 'prompt-manager-icons';
     iconsContainer.style.cssText = `
       position: absolute;
-      right: 60px;
+      right: 50px;
       top: 50%;
       transform: translateY(-50%);
       display: flex;
-      gap: 8px;
+      gap: 4px;
       z-index: 1000;
       align-items: center;
       pointer-events: auto;
     `;
 
     const icons = [
-      { type: 'save', icon: '💾', tooltip: 'Save as Prompt', color: '#10B981' },
-      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark Text', color: '#EF4444' },
-      { type: 'craft-social', icon: '📱', tooltip: 'Craft for Social Media', color: '#8B5CF6' },
-      { type: 'enhance', icon: '✨', tooltip: 'Enhance Text', color: '#F59E0B' }
+      { type: 'save', icon: '💾', tooltip: 'Save' },
+      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark' },
+      { type: 'craft-social', icon: '📱', tooltip: 'Social' },
+      { type: 'enhance', icon: '✨', tooltip: 'Enhance' }
     ];
 
     icons.forEach(iconData => {
-      const icon = this.createInputIcon(iconData.type, iconData.icon, iconData.tooltip, iconData.color);
+      const icon = this.createInputIcon(iconData.type, iconData.icon, iconData.tooltip);
       iconsContainer.appendChild(icon);
     });
 
@@ -234,37 +276,37 @@ class ChatGPTPromptManager {
     console.log('Input icons injected successfully');
   }
 
-  createInputIcon(type, iconText, tooltip, color) {
+  createInputIcon(type, iconText, tooltip) {
     const icon = document.createElement('button');
     icon.innerHTML = iconText;
     icon.title = tooltip;
     icon.setAttribute('data-type', type);
     icon.style.cssText = `
       background: white;
-      border: 2px solid #e5e7eb;
+      border: 1px solid #d1d5db;
       color: #6b7280;
       cursor: pointer;
-      padding: 8px;
-      border-radius: 10px;
-      transition: all 0.3s ease;
-      font-size: 14px;
-      width: 36px;
-      height: 36px;
+      padding: 6px;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      font-size: 12px;
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     `;
 
     icon.addEventListener('mouseenter', () => {
-      icon.style.borderColor = color;
-      icon.style.backgroundColor = color + '15';
-      icon.style.transform = 'scale(1.1)';
+      icon.style.backgroundColor = '#f9fafb';
+      icon.style.borderColor = '#9ca3af';
+      icon.style.transform = 'scale(1.05)';
     });
 
     icon.addEventListener('mouseleave', () => {
-      icon.style.borderColor = '#e5e7eb';
       icon.style.backgroundColor = 'white';
+      icon.style.borderColor = '#d1d5db';
       icon.style.transform = 'scale(1)';
     });
 
@@ -349,7 +391,6 @@ class ChatGPTPromptManager {
   }
 
   processMessages(container) {
-    // More specific selectors for ChatGPT messages
     const messageSelectors = [
       '[data-message-author-role="user"]',
       '[data-message-author-role="assistant"]',
@@ -370,7 +411,6 @@ class ChatGPTPromptManager {
   }
 
   processChatMenus(container) {
-    // Look for ChatGPT's dropdown menus
     const menuSelectors = [
       '[role="menu"]',
       '.absolute.right-0',
@@ -391,7 +431,6 @@ class ChatGPTPromptManager {
   }
 
   isChatMenu(menu) {
-    // Check if this is a chat menu by looking for typical menu items
     const menuText = menu.textContent.toLowerCase();
     return menuText.includes('share') || 
            menuText.includes('rename') || 
@@ -400,31 +439,29 @@ class ChatGPTPromptManager {
   }
 
   addDownloadOption(menu) {
-    // Find the menu items container
     const menuItems = menu.querySelector('[role="menuitem"]')?.parentElement;
     if (!menuItems) return;
 
-    // Check if download option already exists
     if (menu.querySelector('[data-download-option]')) return;
 
-    // Create download option
     const downloadItem = document.createElement('div');
     downloadItem.setAttribute('data-download-option', 'true');
     downloadItem.setAttribute('role', 'menuitem');
     downloadItem.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
+      gap: 8px;
+      padding: 8px 12px;
       cursor: pointer;
       transition: background-color 0.2s ease;
-      border-radius: 8px;
-      margin: 2px 0;
+      border-radius: 6px;
+      margin: 1px 0;
+      font-size: 14px;
     `;
 
     downloadItem.innerHTML = `
-      <span style="font-size: 16px;">📥</span>
-      <span style="font-size: 14px; font-weight: 500;">Download Chat</span>
+      <span style="font-size: 14px;">📥</span>
+      <span style="font-size: 14px;">Download Chat</span>
     `;
 
     downloadItem.addEventListener('mouseenter', () => {
@@ -438,11 +475,9 @@ class ChatGPTPromptManager {
     downloadItem.addEventListener('click', (e) => {
       e.stopPropagation();
       this.downloadCurrentChat();
-      // Close the menu
       menu.style.display = 'none';
     });
 
-    // Insert before the last item (usually delete)
     const lastItem = menuItems.lastElementChild;
     if (lastItem) {
       menuItems.insertBefore(downloadItem, lastItem);
@@ -452,30 +487,29 @@ class ChatGPTPromptManager {
   }
 
   addMessageActions(message) {
-    // Avoid adding actions to messages that already have them
     if (message.querySelector('.message-actions')) return;
 
     const actionsContainer = document.createElement('div');
     actionsContainer.className = 'message-actions';
     actionsContainer.style.cssText = `
       position: absolute;
-      top: 8px;
-      right: 8px;
+      top: 4px;
+      right: 4px;
       display: flex;
-      gap: 6px;
+      gap: 4px;
       opacity: 0;
-      transition: opacity 0.3s ease;
+      transition: opacity 0.2s ease;
       background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 6px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      backdrop-filter: blur(4px);
+      border-radius: 8px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       z-index: 10;
     `;
 
     const actions = [
-      { type: 'save', icon: '💾', tooltip: 'Save as Prompt', color: '#10B981' },
-      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark Message', color: '#EF4444' }
+      { type: 'save', icon: '💾', tooltip: 'Save' },
+      { type: 'bookmark', icon: '🔖', tooltip: 'Bookmark' }
     ];
 
     actions.forEach(action => {
@@ -487,25 +521,25 @@ class ChatGPTPromptManager {
         border: 1px solid #e5e7eb;
         color: #6b7280;
         cursor: pointer;
-        padding: 6px;
-        border-radius: 8px;
+        padding: 4px;
+        border-radius: 4px;
         transition: all 0.2s ease;
-        font-size: 12px;
-        width: 28px;
-        height: 28px;
+        font-size: 10px;
+        width: 20px;
+        height: 20px;
         display: flex;
         align-items: center;
         justify-content: center;
       `;
 
       button.addEventListener('mouseenter', () => {
-        button.style.borderColor = action.color;
-        button.style.backgroundColor = action.color + '15';
+        button.style.backgroundColor = '#f9fafb';
+        button.style.borderColor = '#9ca3af';
       });
 
       button.addEventListener('mouseleave', () => {
-        button.style.borderColor = '#e5e7eb';
         button.style.backgroundColor = 'white';
+        button.style.borderColor = '#e5e7eb';
       });
 
       button.addEventListener('click', (e) => {
@@ -521,10 +555,8 @@ class ChatGPTPromptManager {
       actionsContainer.appendChild(button);
     });
 
-    // Make message container relative for absolute positioning
     message.style.position = 'relative';
 
-    // Add hover effects to show/hide actions
     message.addEventListener('mouseenter', () => {
       actionsContainer.style.opacity = '1';
     });
@@ -537,7 +569,6 @@ class ChatGPTPromptManager {
   }
 
   extractMessageText(message) {
-    // Try different methods to extract text content
     const textSelectors = [
       '.prose',
       '[class*="markdown"]',
@@ -552,7 +583,6 @@ class ChatGPTPromptManager {
       }
     }
 
-    // Fallback to message text content
     return message.textContent.trim();
   }
 
@@ -568,7 +598,7 @@ class ChatGPTPromptManager {
   downloadCurrentChat() {
     const messages = this.getAllChatMessages();
     if (messages.length === 0) {
-      this.showNotification('No messages found to download', 'warning');
+      this.showNotification('No messages found', 'warning');
       return;
     }
 
@@ -601,7 +631,6 @@ class ChatGPTPromptManager {
   }
 
   getChatTitle() {
-    // Try to get chat title from various possible locations
     const titleSelectors = [
       'h1',
       '[class*="title"]',
@@ -632,7 +661,7 @@ class ChatGPTPromptManager {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    this.showNotification('Chat downloaded successfully!', 'success');
+    this.showNotification('Chat downloaded!', 'success');
   }
 
   formatChatForDownload(chatData) {
@@ -691,13 +720,13 @@ class ChatGPTPromptManager {
 
     this.bookmarks.unshift(bookmark);
     chrome.storage.local.set({ bookmarks: this.bookmarks });
-    this.showNotification('Added to bookmarks!', 'success');
+    this.showNotification('Bookmarked!', 'success');
   }
 
   craftForSocialMedia(text) {
     const enhanced = this.enhanceForSocialMedia(text);
     this.insertPrompt(enhanced);
-    this.showNotification('Text crafted for social media!', 'success');
+    this.showNotification('Crafted for social media!', 'success');
   }
 
   enhanceText(text) {
@@ -711,13 +740,13 @@ class ChatGPTPromptManager {
 
 ${text}
 
-✨ Enhanced for maximum engagement:
-• Added relevant emojis and hashtags
-• Optimized for platform algorithms
-• Included call-to-action
-• Structured for readability
+✨ Enhanced for engagement:
+• Added emojis and hashtags
+• Optimized for algorithms
+• Clear call-to-action
+• Better readability
 
-#SocialMedia #Engagement #Content`;
+#SocialMedia #Content`;
   }
 
   enhancePrompt(text) {
@@ -725,17 +754,17 @@ ${text}
 
 Original: ${text}
 
-Improved version with:
-• Clear context and background
-• Specific instructions and format
-• Expected output structure
-• Relevant constraints and guidelines
+Improved with:
+• Clear context
+• Specific instructions
+• Expected format
+• Relevant constraints
 
-Please provide a comprehensive response that addresses all aspects of this request with specific examples and actionable insights.`;
+Please provide a comprehensive response with examples and actionable insights.`;
   }
 
   showFocusedOverlay(type) {
-    console.log(`Showing focused overlay for: ${type}`);
+    console.log(`Showing overlay: ${type}`);
     
     this.hideOverlay();
     
@@ -755,26 +784,20 @@ Please provide a comprehensive response that addresses all aspects of this reque
   }
 
   createLibraryOverlay() {
-    this.overlayContainer = this.createBaseOverlay('📚', 'Prompt Library', '#3B82F6');
+    this.overlayContainer = this.createBaseOverlay('📚', 'Library');
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
-      <div style="margin-bottom: 32px;">
-        <div style="position: relative; margin-bottom: 24px;">
-          <input 
-            type="text" 
-            id="prompt-search" 
-            placeholder="Search prompts by title, content, or tags..." 
-            style="width: 100%; padding: 16px 20px 16px 52px; border: 2px solid #e5e7eb; border-radius: 16px; font-size: 16px; outline: none; transition: all 0.2s ease; background: white; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);"
-          />
-          <svg style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: #9ca3af;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="m21 21-4.35-4.35"/>
-          </svg>
-        </div>
+      <div style="margin-bottom: 20px;">
+        <input 
+          type="text" 
+          id="prompt-search" 
+          placeholder="Search prompts..." 
+          style="width: 100%; padding: 12px 16px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; outline: none;"
+        />
       </div>
       
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px; max-height: 500px; overflow-y: auto; padding-right: 8px;" id="prompts-grid">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; max-height: 400px; overflow-y: auto;" id="prompts-grid">
         ${this.prompts.map(prompt => this.renderPromptCard(prompt)).join('')}
       </div>
     `;
@@ -785,18 +808,18 @@ Please provide a comprehensive response that addresses all aspects of this reque
   }
 
   createBookmarksOverlay() {
-    this.overlayContainer = this.createBaseOverlay('🔖', 'Bookmarked Content', '#EF4444');
+    this.overlayContainer = this.createBaseOverlay('🔖', 'Bookmarks');
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
       ${this.bookmarks.length === 0 ? `
-        <div style="text-align: center; padding: 80px 20px; color: #6b7280;">
-          <div style="font-size: 64px; margin-bottom: 24px;">🔖</div>
-          <h3 style="margin: 0 0 12px 0; font-size: 24px; color: #374151; font-weight: 700;">No bookmarks yet</h3>
-          <p style="margin: 0; font-size: 16px; max-width: 400px; margin: 0 auto; line-height: 1.6;">Bookmark messages or text to access them quickly here</p>
+        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
+          <div style="font-size: 48px; margin-bottom: 16px;">🔖</div>
+          <h3 style="margin: 0 0 8px 0; font-size: 18px; color: #374151;">No bookmarks yet</h3>
+          <p style="margin: 0; font-size: 14px;">Bookmark messages to access them here</p>
         </div>
       ` : `
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px; max-height: 500px; overflow-y: auto; padding-right: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; max-height: 400px; overflow-y: auto;">
           ${this.bookmarks.map(bookmark => this.renderBookmarkCard(bookmark)).join('')}
         </div>
       `}
@@ -807,63 +830,40 @@ Please provide a comprehensive response that addresses all aspects of this reque
   }
 
   createCraftOverlay() {
-    this.overlayContainer = this.createBaseOverlay('✨', 'Prompt Craft', '#F59E0B');
+    this.overlayContainer = this.createBaseOverlay('✨', 'Craft');
     
     const content = this.overlayContainer.querySelector('#overlay-content');
     content.innerHTML = `
-      <div style="max-width: 900px; margin: 0 auto; max-height: 500px; overflow-y: auto; padding-right: 8px;">
-        <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 20px; padding: 32px; margin-bottom: 32px; border: 1px solid #bae6fd;">
-          <h3 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 600; color: #0f172a;">
-            🎯 Enhancement Techniques
-          </h3>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
-            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
-              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2); accent-color: #F59E0B;" />
-              <div>
-                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px;">Clarity Enhancement</div>
-                <div style="font-size: 14px; color: #64748b;">Make the prompt more specific and clear</div>
-              </div>
-            </label>
-            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
-              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2); accent-color: #F59E0B;" />
-              <div>
-                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px;">Context Addition</div>
-                <div style="font-size: 14px; color: #64748b;">Add relevant background information</div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 32px;">
-          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px;">Original Prompt</label>
+      <div style="max-width: 600px; margin: 0 auto;">
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; font-weight: 500; color: #374151; margin-bottom: 8px; font-size: 14px;">Original Text</label>
           <textarea 
             id="original-prompt" 
-            placeholder="Enter your original prompt here..."
-            style="width: 100%; height: 120px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; resize: vertical; outline: none; transition: all 0.2s ease; font-family: inherit; line-height: 1.5; background: white;"
+            placeholder="Enter your text here..."
+            style="width: 100%; height: 100px; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; resize: vertical; outline: none; font-family: inherit;"
           ></textarea>
         </div>
 
-        <div style="text-align: center; margin-bottom: 32px;">
-          <button id="improve-prompt" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; border: none; padding: 18px 40px; border-radius: 16px; font-size: 18px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 12px;">
-            <span>✨</span>
-            Improve Prompt
+        <div style="text-align: center; margin-bottom: 20px;">
+          <button id="improve-prompt" style="background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;">
+            ✨ Improve Text
           </button>
         </div>
 
         <div id="improved-prompt-container" style="display: none;">
-          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px;">Improved Prompt</label>
+          <label style="display: block; font-weight: 500; color: #374151; margin-bottom: 8px; font-size: 14px;">Improved Text</label>
           <div style="position: relative;">
             <textarea 
               id="improved-prompt" 
               readonly
-              style="width: 100%; height: 200px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; background: #f9fafb; resize: vertical; font-family: inherit; line-height: 1.5;"
+              style="width: 100%; height: 150px; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #f9fafb; resize: vertical; font-family: inherit;"
             ></textarea>
-            <div style="position: absolute; top: 16px; right: 16px; display: flex; gap: 8px;">
-              <button id="copy-improved" style="background: white; border: 2px solid #d1d5db; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500;">
+            <div style="position: absolute; top: 8px; right: 8px; display: flex; gap: 4px;">
+              <button id="copy-improved" style="background: white; border: 1px solid #d1d5db; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">
                 📋 Copy
               </button>
-              <button id="use-improved" style="background: #F59E0B; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500;">
-                Use Prompt
+              <button id="use-improved" style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                Use
               </button>
             </div>
           </div>
@@ -875,7 +875,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
     this.showOverlay();
   }
 
-  createBaseOverlay(icon, title, color) {
+  createBaseOverlay(icon, title) {
     const overlay = document.createElement('div');
     overlay.id = 'prompt-manager-overlay';
     overlay.style.cssText = `
@@ -884,12 +884,11 @@ Please provide a comprehensive response that addresses all aspects of this reque
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.5);
       z-index: 999999;
       display: none;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(12px);
       padding: 20px;
       box-sizing: border-box;
     `;
@@ -897,40 +896,32 @@ Please provide a comprehensive response that addresses all aspects of this reque
     const panel = document.createElement('div');
     panel.style.cssText = `
       background: white;
-      border-radius: 24px;
+      border-radius: 12px;
       width: 100%;
-      max-width: 1200px;
-      height: 90vh;
-      max-height: 800px;
+      max-width: 800px;
+      max-height: 80vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
-      position: relative;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
     `;
 
     const header = document.createElement('div');
     header.style.cssText = `
-      background: linear-gradient(135deg, ${color}, ${color}dd);
-      color: white;
-      padding: 24px 32px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 16px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-radius: 24px 24px 0 0;
     `;
 
     header.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 16px;">
-        <div style="width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
-          ${icon}
-        </div>
-        <div>
-          <h1 style="margin: 0; font-size: 24px; font-weight: 700;">${title}</h1>
-          <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9;">Enhance your ChatGPT experience</p>
-        </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 20px;">${icon}</span>
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600; color: #374151;">${title}</h2>
       </div>
-      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.3s ease;">×</button>
+      <button id="close-overlay" style="background: none; border: none; color: #6b7280; cursor: pointer; font-size: 20px; padding: 4px; border-radius: 4px;">×</button>
     `;
 
     const content = document.createElement('div');
@@ -938,8 +929,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
     content.style.cssText = `
       flex: 1;
       overflow: hidden;
-      padding: 32px;
-      background: #fafafa;
+      padding: 20px;
     `;
 
     panel.appendChild(header);
@@ -947,7 +937,6 @@ Please provide a comprehensive response that addresses all aspects of this reque
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
 
-    // Add event listeners
     const closeBtn = header.querySelector('#close-overlay');
     closeBtn.addEventListener('click', () => this.hideOverlay());
 
@@ -964,29 +953,26 @@ Please provide a comprehensive response that addresses all aspects of this reque
     return `
       <div class="prompt-card" style="
         background: white;
-        border: 2px solid #f1f5f9;
-        border-radius: 20px;
-        padding: 24px;
-        transition: all 0.3s ease;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px;
         cursor: pointer;
-        position: relative;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        transition: all 0.2s ease;
       " data-prompt='${JSON.stringify(prompt).replace(/'/g, "&#39;")}'>
-        <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #1f2937;">${prompt.title}</h3>
-        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 15px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #374151;">${prompt.title}</h3>
+        <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
           ${prompt.content}
         </p>
         <button class="use-prompt-btn" style="
           width: 100%;
-          background: linear-gradient(135deg, #3B82F6, #2563EB);
+          background: #3b82f6;
           color: white;
           border: none;
-          padding: 12px;
-          border-radius: 12px;
-          font-size: 14px;
-          font-weight: 600;
+          padding: 8px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 500;
           cursor: pointer;
-          transition: all 0.2s ease;
         ">
           Use Prompt
         </button>
@@ -998,46 +984,42 @@ Please provide a comprehensive response that addresses all aspects of this reque
     return `
       <div class="bookmark-card" style="
         background: white;
-        border: 2px solid #f1f5f9;
-        border-radius: 20px;
-        padding: 24px;
-        transition: all 0.3s ease;
-        position: relative;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px;
+        transition: all 0.2s ease;
       " data-bookmark='${JSON.stringify(bookmark).replace(/'/g, "&#39;")}'>
-        <div style="display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px;">
-          <span style="background: #EF4444; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">
-            ${bookmark.source === 'chat' ? '💬 Chat' : '📝 Input'}
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">
+            ${bookmark.source === 'chat' ? 'Chat' : 'Input'}
           </span>
-          <button class="delete-bookmark-btn" style="background: none; border: none; color: #dc2626; cursor: pointer; padding: 4px; border-radius: 6px; font-size: 16px;">×</button>
+          <button class="delete-bookmark-btn" style="background: none; border: none; color: #dc2626; cursor: pointer; font-size: 14px;">×</button>
         </div>
-        <p style="margin: 0 0 16px 0; color: #374151; font-size: 14px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">
-          ${bookmark.content.substring(0, 150)}${bookmark.content.length > 150 ? '...' : ''}
+        <p style="margin: 0 0 12px 0; color: #374151; font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+          ${bookmark.content.substring(0, 120)}${bookmark.content.length > 120 ? '...' : ''}
         </p>
         <div style="display: flex; gap: 8px;">
           <button class="use-bookmark-btn" style="
             flex: 1;
-            background: linear-gradient(135deg, #EF4444, #DC2626);
+            background: #ef4444;
             color: white;
             border: none;
-            padding: 10px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
+            padding: 6px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.2s ease;
           ">
-            Use Text
+            Use
           </button>
           <button class="copy-bookmark-btn" style="
             background: white;
-            border: 2px solid #e5e7eb;
+            border: 1px solid #d1d5db;
             color: #6b7280;
-            padding: 10px 16px;
-            border-radius: 10px;
-            font-size: 13px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
             cursor: pointer;
-            transition: all 0.2s ease;
           ">
             📋
           </button>
@@ -1084,7 +1066,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
         e.stopPropagation();
         const bookmarkData = JSON.parse(card.getAttribute('data-bookmark'));
         navigator.clipboard.writeText(bookmarkData.content);
-        this.showNotification('Copied to clipboard!', 'success');
+        this.showNotification('Copied!', 'success');
       });
 
       deleteBtn.addEventListener('click', (e) => {
@@ -1109,16 +1091,16 @@ Please provide a comprehensive response that addresses all aspects of this reque
         const originalText = originalTextarea.value.trim();
         if (!originalText) return;
 
-        improveBtn.innerHTML = '<span>⏳</span> Improving...';
+        improveBtn.innerHTML = '⏳ Improving...';
         improveBtn.disabled = true;
 
         setTimeout(() => {
           const improved = this.enhancePrompt(originalText);
           improvedTextarea.value = improved;
           improvedContainer.style.display = 'block';
-          improveBtn.innerHTML = '<span>✨</span> Improve Prompt';
+          improveBtn.innerHTML = '✨ Improve Text';
           improveBtn.disabled = false;
-        }, 1500);
+        }, 1000);
       });
     }
 
@@ -1128,7 +1110,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
         copyBtn.innerHTML = '✅ Copied';
         setTimeout(() => {
           copyBtn.innerHTML = '📋 Copy';
-        }, 2000);
+        }, 1500);
       });
     }
 
@@ -1157,7 +1139,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
   deleteBookmark(bookmarkId) {
     this.bookmarks = this.bookmarks.filter(b => b.id !== bookmarkId);
     chrome.storage.local.set({ bookmarks: this.bookmarks });
-    this.showNotification('Bookmark deleted', 'info');
+    this.showNotification('Deleted', 'info');
   }
 
   showOverlay() {
@@ -1230,35 +1212,31 @@ Please provide a comprehensive response that addresses all aspects of this reque
       position: fixed;
       top: 20px;
       right: 20px;
-      background: ${type === 'success' ? '#10B981' : type === 'warning' ? '#F59E0B' : type === 'error' ? '#EF4444' : '#3B82F6'};
+      background: ${type === 'success' ? '#10b981' : type === 'warning' ? '#f59e0b' : type === 'error' ? '#ef4444' : '#3b82f6'};
       color: white;
-      padding: 16px 24px;
-      border-radius: 12px;
+      padding: 12px 16px;
+      border-radius: 8px;
       font-size: 14px;
       font-weight: 500;
       z-index: 1000000;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-      animation: slideInRight 0.3s ease-out;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     `;
     
     notification.textContent = message;
     document.body.appendChild(notification);
     
     setTimeout(() => {
-      notification.style.animation = 'slideOutRight 0.3s ease-in';
-      setTimeout(() => {
-        if (document.body.contains(notification)) {
-          document.body.removeChild(notification);
-        }
-      }, 300);
-    }, 3000);
+      if (document.body.contains(notification)) {
+        document.body.removeChild(notification);
+      }
+    }, 2000);
   }
 
   getDefaultPrompts() {
     return [
       {
         id: '1',
-        title: 'Blog Post Outline Creator',
+        title: 'Blog Post Outline',
         content: 'Create a comprehensive blog post outline for the topic: [TOPIC]. Include main headings, subheadings, key points to cover, and suggested word count for each section.',
         category: 'Writing',
         tags: ['blog', 'content', 'outline'],
@@ -1269,7 +1247,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
       },
       {
         id: '2',
-        title: 'Code Security Audit',
+        title: 'Code Review',
         content: 'Review the following code for security vulnerabilities, performance issues, and best practices. Provide specific recommendations for improvement:\n\n[CODE]',
         category: 'Code Review',
         tags: ['security', 'audit', 'best-practices'],
@@ -1280,7 +1258,7 @@ Please provide a comprehensive response that addresses all aspects of this reque
       },
       {
         id: '3',
-        title: 'SWOT Analysis Generator',
+        title: 'SWOT Analysis',
         content: 'Create a detailed SWOT analysis for [COMPANY/PRODUCT]. Analyze Strengths, Weaknesses, Opportunities, and Threats with specific examples and actionable insights.',
         category: 'Business',
         tags: ['swot', 'analysis', 'strategy'],
@@ -1293,52 +1271,35 @@ Please provide a comprehensive response that addresses all aspects of this reque
   }
 }
 
-// Add CSS animations
+// Add minimal CSS
 const style = document.createElement('style');
 style.textContent = `
-  @keyframes slideInRight {
-    from {
-      opacity: 0;
-      transform: translateX(100%);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+  .prompt-card:hover {
+    border-color: #9ca3af !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
   }
 
-  @keyframes slideOutRight {
-    from {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(100%);
-    }
+  .bookmark-card:hover {
+    border-color: #9ca3af !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
   }
 
-  /* Custom scrollbar for overlays */
+  /* Minimal scrollbar */
   #prompt-manager-overlay *::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
   }
 
   #prompt-manager-overlay *::-webkit-scrollbar-track {
     background: #f1f5f9;
-    border-radius: 4px;
   }
 
   #prompt-manager-overlay *::-webkit-scrollbar-thumb {
     background: #cbd5e1;
-    border-radius: 4px;
-  }
-
-  #prompt-manager-overlay *::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    border-radius: 3px;
   }
 `;
 document.head.appendChild(style);
 
-// Initialize the prompt manager
+// Initialize
 console.log('Initializing ChatGPT Prompt Manager...');
 new ChatGPTPromptManager();
