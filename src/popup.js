@@ -3,23 +3,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load stats
   await loadStats();
   
-  // Add event listeners
-  document.getElementById('toggle-panel').addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'togglePanel' });
-      window.close();
-    });
-  });
-  
-  document.getElementById('open-manager').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'openFullManager' });
-    window.close();
-  });
-  
-  document.getElementById('open-full-manager').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'openFullManager' });
-    window.close();
-  });
+  // Check if we're on ChatGPT
+  checkChatGPTStatus();
 });
 
 async function loadStats() {
@@ -32,5 +17,33 @@ async function loadStats() {
       prompts.filter(p => p.isBookmarked).length;
   } catch (error) {
     console.error('Error loading stats:', error);
+  }
+}
+
+async function checkChatGPTStatus() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const isChatGPT = tab.url.includes('chat.openai.com') || tab.url.includes('chatgpt.com');
+    
+    const statusCard = document.querySelector('.status-card');
+    const statusIcon = statusCard.querySelector('.status-icon');
+    const statusText = statusCard.querySelector('.status-text');
+    const statusSubtext = statusCard.querySelector('.status-subtext');
+    
+    if (isChatGPT) {
+      statusIcon.textContent = '✅';
+      statusText.textContent = 'Extension Active';
+      statusSubtext.textContent = 'Icons added to ChatGPT input';
+      statusCard.style.borderColor = '#10B981';
+      statusCard.style.backgroundColor = '#f0fdf4';
+    } else {
+      statusIcon.textContent = '⚠️';
+      statusText.textContent = 'Not on ChatGPT';
+      statusSubtext.textContent = 'Visit chat.openai.com to use';
+      statusCard.style.borderColor = '#f59e0b';
+      statusCard.style.backgroundColor = '#fffbeb';
+    }
+  } catch (error) {
+    console.error('Error checking ChatGPT status:', error);
   }
 }
