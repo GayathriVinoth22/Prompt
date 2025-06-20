@@ -245,7 +245,9 @@ class ChatGPTPromptManager {
   createLibraryOverlay() {
     this.overlayContainer = this.createBaseOverlay('📚', 'Prompt Library', '#3B82F6');
     
-    const content = this.overlayContainer.querySelector('#overlay-content');
+    const content = this.overlayContainer?.querySelector('#overlay-content');
+    if (!content) return;
+    
     content.innerHTML = `
       <div style="margin-bottom: 32px;">
         <div style="position: relative; margin-bottom: 24px;">
@@ -276,7 +278,9 @@ class ChatGPTPromptManager {
     const bookmarkedPrompts = this.prompts.filter(p => p.isBookmarked);
     this.overlayContainer = this.createBaseOverlay('🔖', 'Bookmarked Prompts', '#EF4444');
     
-    const content = this.overlayContainer.querySelector('#overlay-content');
+    const content = this.overlayContainer?.querySelector('#overlay-content');
+    if (!content) return;
+    
     content.innerHTML = `
       ${bookmarkedPrompts.length === 0 ? `
         <div style="text-align: center; padding: 80px 20px; color: #6b7280;">
@@ -298,7 +302,9 @@ class ChatGPTPromptManager {
   createCraftOverlay() {
     this.overlayContainer = this.createBaseOverlay('✨', 'Prompt Craft', '#F59E0B');
     
-    const content = this.overlayContainer.querySelector('#overlay-content');
+    const content = this.overlayContainer?.querySelector('#overlay-content');
+    if (!content) return;
+    
     content.innerHTML = `
       <div style="max-width: 900px; margin: 0 auto;">
         <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 20px; padding: 32px; margin-bottom: 32px; border: 1px solid #bae6fd;">
@@ -377,114 +383,123 @@ class ChatGPTPromptManager {
   }
 
   createBaseOverlay(icon, title, color) {
-    // Create overlay backdrop
-    const overlay = document.createElement('div');
-    overlay.id = 'prompt-manager-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 999999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(12px);
-      padding: 20px;
-      box-sizing: border-box;
-      animation: fadeIn 0.3s ease-out;
-    `;
+    try {
+      // Create overlay backdrop
+      const overlay = document.createElement('div');
+      overlay.id = 'prompt-manager-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 999999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(12px);
+        padding: 20px;
+        box-sizing: border-box;
+        animation: fadeIn 0.3s ease-out;
+      `;
 
-    // Create main panel
-    const panel = document.createElement('div');
-    panel.style.cssText = `
-      background: white;
-      border-radius: 24px;
-      width: 100%;
-      max-width: 1200px;
-      height: 90vh;
-      max-height: 800px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
-      position: relative;
-      animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-    `;
+      // Create main panel
+      const panel = document.createElement('div');
+      panel.style.cssText = `
+        background: white;
+        border-radius: 24px;
+        width: 100%;
+        max-width: 1200px;
+        height: 90vh;
+        max-height: 800px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+        position: relative;
+        animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      `;
 
-    // Create header
-    const header = document.createElement('div');
-    header.style.cssText = `
-      background: linear-gradient(135deg, ${color}, ${color}dd);
-      color: white;
-      padding: 24px 32px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-radius: 24px 24px 0 0;
-      position: relative;
-      overflow: hidden;
-    `;
+      // Create header
+      const header = document.createElement('div');
+      header.style.cssText = `
+        background: linear-gradient(135deg, ${color}, ${color}dd);
+        color: white;
+        padding: 24px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 24px 24px 0 0;
+        position: relative;
+        overflow: hidden;
+      `;
 
-    header.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 16px; position: relative; z-index: 1;">
-        <div style="width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; backdrop-filter: blur(10px);">
-          ${icon}
+      header.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 16px; position: relative; z-index: 1;">
+          <div style="width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; backdrop-filter: blur(10px);">
+            ${icon}
+          </div>
+          <div>
+            <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">${title}</h1>
+            <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9; font-weight: 400;">Enhance your ChatGPT experience</p>
+          </div>
         </div>
-        <div>
-          <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">${title}</h1>
-          <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9; font-weight: 400;">Enhance your ChatGPT experience</p>
-        </div>
-      </div>
-      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.3s ease; position: relative; z-index: 1; backdrop-filter: blur(10px);">×</button>
-    `;
+        <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.3s ease; position: relative; z-index: 1; backdrop-filter: blur(10px);">×</button>
+      `;
 
-    // Create content area
-    const content = document.createElement('div');
-    content.id = 'overlay-content';
-    content.style.cssText = `
-      flex: 1;
-      overflow-y: auto;
-      padding: 32px;
-      background: #fafafa;
-    `;
+      // Create content area
+      const content = document.createElement('div');
+      content.id = 'overlay-content';
+      content.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        padding: 32px;
+        background: #fafafa;
+      `;
 
-    // Assemble panel
-    panel.appendChild(header);
-    panel.appendChild(content);
-    overlay.appendChild(panel);
+      // Assemble panel
+      panel.appendChild(header);
+      panel.appendChild(content);
+      overlay.appendChild(panel);
 
-    // Add to document
-    document.body.appendChild(overlay);
+      // Add to document
+      document.body.appendChild(overlay);
 
-    // Add event listeners
-    const closeBtn = header.querySelector('#close-overlay');
-    closeBtn.addEventListener('click', () => this.hideOverlay());
-    closeBtn.addEventListener('mouseenter', () => {
-      closeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
-      closeBtn.style.transform = 'scale(1.1)';
-    });
-    closeBtn.addEventListener('mouseleave', () => {
-      closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
-      closeBtn.style.transform = 'scale(1)';
-    });
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        this.hideOverlay();
+      // Add event listeners
+      const closeBtn = header.querySelector('#close-overlay');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => this.hideOverlay());
+        closeBtn.addEventListener('mouseenter', () => {
+          closeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+          closeBtn.style.transform = 'scale(1.1)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+          closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+          closeBtn.style.transform = 'scale(1)';
+        });
       }
-    });
 
-    // Add keyboard shortcut to close
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && overlay.style.display === 'flex') {
-        this.hideOverlay();
-      }
-    });
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          this.hideOverlay();
+        }
+      });
 
-    return overlay;
+      // Add keyboard shortcut to close
+      const handleKeydown = (e) => {
+        if (e.key === 'Escape' && overlay.style.display === 'flex') {
+          this.hideOverlay();
+          document.removeEventListener('keydown', handleKeydown);
+        }
+      };
+      document.addEventListener('keydown', handleKeydown);
+
+      return overlay;
+    } catch (error) {
+      console.error('Error creating base overlay:', error);
+      return null;
+    }
   }
 
   showOverlay() {
@@ -586,9 +601,13 @@ class ChatGPTPromptManager {
 
       setTimeout(() => {
         const improved = this.generateImprovedPrompt(originalText, selectedTechniques);
-        improvedTextarea.value = improved;
-        improvedContainer.style.display = 'block';
-        improvedContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (improvedTextarea) {
+          improvedTextarea.value = improved;
+        }
+        if (improvedContainer) {
+          improvedContainer.style.display = 'block';
+          improvedContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         
         improveBtn.innerHTML = '<span style="font-size: 20px;">✨</span> Improve Prompt';
         improveBtn.disabled = false;
@@ -598,18 +617,22 @@ class ChatGPTPromptManager {
     // Copy and Use buttons
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(improvedTextarea.value);
-        copyBtn.innerHTML = '✅ Copied';
-        setTimeout(() => {
-          copyBtn.innerHTML = '📋 Copy';
-        }, 2000);
+        if (improvedTextarea) {
+          navigator.clipboard.writeText(improvedTextarea.value);
+          copyBtn.innerHTML = '✅ Copied';
+          setTimeout(() => {
+            copyBtn.innerHTML = '📋 Copy';
+          }, 2000);
+        }
       });
     }
 
     if (useBtn) {
       useBtn.addEventListener('click', () => {
-        this.insertPrompt(improvedTextarea.value);
-        this.hideOverlay();
+        if (improvedTextarea) {
+          this.insertPrompt(improvedTextarea.value);
+          this.hideOverlay();
+        }
       });
     }
 
@@ -780,8 +803,16 @@ Maintain a professional yet accessible tone throughout your response, and ensure
   }
 
   addPromptCardListeners() {
+    // Add null check for document and querySelectorAll
+    if (!document) return;
+    
+    const promptCards = document.querySelectorAll('.prompt-card');
+    if (!promptCards || promptCards.length === 0) return;
+
     // Add event listeners to prompt cards
-    document.querySelectorAll('.prompt-card').forEach(card => {
+    promptCards.forEach(card => {
+      if (!card) return;
+
       // Hover effects
       card.addEventListener('mouseenter', () => {
         card.style.borderColor = '#10B981';
@@ -797,38 +828,50 @@ Maintain a professional yet accessible tone throughout your response, and ensure
 
       // Use prompt button
       const useBtn = card.querySelector('.use-prompt-btn');
-      useBtn.addEventListener('mouseenter', () => {
-        useBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
-        useBtn.style.transform = 'translateY(-1px)';
-      });
+      if (useBtn) {
+        useBtn.addEventListener('mouseenter', () => {
+          useBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+          useBtn.style.transform = 'translateY(-1px)';
+        });
 
-      useBtn.addEventListener('mouseleave', () => {
-        useBtn.style.background = 'linear-gradient(135deg, #10B981, #059669)';
-        useBtn.style.transform = 'translateY(0)';
-      });
+        useBtn.addEventListener('mouseleave', () => {
+          useBtn.style.background = 'linear-gradient(135deg, #10B981, #059669)';
+          useBtn.style.transform = 'translateY(0)';
+        });
 
-      useBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const promptData = JSON.parse(card.getAttribute('data-prompt'));
-        this.insertPrompt(promptData.content);
-        this.hideOverlay();
-      });
+        useBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          try {
+            const promptData = JSON.parse(card.getAttribute('data-prompt'));
+            this.insertPrompt(promptData.content);
+            this.hideOverlay();
+          } catch (error) {
+            console.error('Error parsing prompt data:', error);
+          }
+        });
+      }
 
       // Bookmark button
       const bookmarkBtn = card.querySelector('.bookmark-btn');
-      bookmarkBtn.addEventListener('mouseenter', () => {
-        bookmarkBtn.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-      });
+      if (bookmarkBtn) {
+        bookmarkBtn.addEventListener('mouseenter', () => {
+          bookmarkBtn.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+        });
 
-      bookmarkBtn.addEventListener('mouseleave', () => {
-        bookmarkBtn.style.backgroundColor = 'transparent';
-      });
+        bookmarkBtn.addEventListener('mouseleave', () => {
+          bookmarkBtn.style.backgroundColor = 'transparent';
+        });
 
-      bookmarkBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const promptData = JSON.parse(card.getAttribute('data-prompt'));
-        this.toggleBookmark(promptData.id);
-      });
+        bookmarkBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          try {
+            const promptData = JSON.parse(card.getAttribute('data-prompt'));
+            this.toggleBookmark(promptData.id);
+          } catch (error) {
+            console.error('Error parsing prompt data:', error);
+          }
+        });
+      }
     });
   }
 
@@ -838,12 +881,19 @@ Maintain a professional yet accessible tone throughout your response, and ensure
     );
     
     // Save to storage
-    chrome.storage.local.set({ prompts: this.prompts });
+    try {
+      chrome.storage.local.set({ prompts: this.prompts });
+    } catch (error) {
+      console.error('Error saving to storage:', error);
+    }
     
     // Re-render current view if it's bookmarks
-    if (this.overlayContainer && this.overlayContainer.querySelector('h1').textContent === 'Bookmarked Prompts') {
-      this.hideOverlay();
-      this.createBookmarksOverlay();
+    if (this.overlayContainer) {
+      const titleElement = this.overlayContainer.querySelector('h1');
+      if (titleElement && titleElement.textContent === 'Bookmarked Prompts') {
+        this.hideOverlay();
+        this.createBookmarksOverlay();
+      }
     }
   }
 
@@ -881,35 +931,39 @@ Maintain a professional yet accessible tone throughout your response, and ensure
     }
     
     if (textarea) {
-      // Handle both textarea and contenteditable elements
-      if (textarea.tagName === 'TEXTAREA') {
-        textarea.value = promptContent;
-        textarea.focus();
-        textarea.setSelectionRange(promptContent.length, promptContent.length);
-      } else if (textarea.contentEditable === 'true') {
-        textarea.textContent = promptContent;
-        textarea.focus();
+      try {
+        // Handle both textarea and contenteditable elements
+        if (textarea.tagName === 'TEXTAREA') {
+          textarea.value = promptContent;
+          textarea.focus();
+          textarea.setSelectionRange(promptContent.length, promptContent.length);
+        } else if (textarea.contentEditable === 'true') {
+          textarea.textContent = promptContent;
+          textarea.focus();
+          
+          // Set cursor to end for contenteditable
+          const range = document.createRange();
+          const selection = window.getSelection();
+          range.selectNodeContents(textarea);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
         
-        // Set cursor to end for contenteditable
-        const range = document.createRange();
-        const selection = window.getSelection();
-        range.selectNodeContents(textarea);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
+        // Trigger events to notify ChatGPT
+        const events = ['input', 'change', 'keyup', 'paste'];
+        events.forEach(eventType => {
+          const event = new Event(eventType, { bubbles: true });
+          textarea.dispatchEvent(event);
+        });
+        
+        // Update current textarea reference
+        this.currentTextarea = textarea;
+        
+        console.log('Prompt inserted successfully');
+      } catch (error) {
+        console.error('Error inserting prompt:', error);
       }
-      
-      // Trigger events to notify ChatGPT
-      const events = ['input', 'change', 'keyup', 'paste'];
-      events.forEach(eventType => {
-        const event = new Event(eventType, { bubbles: true });
-        textarea.dispatchEvent(event);
-      });
-      
-      // Update current textarea reference
-      this.currentTextarea = textarea;
-      
-      console.log('Prompt inserted successfully');
     } else {
       console.error('Could not find ChatGPT textarea');
     }
@@ -1041,6 +1095,10 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Initialize the prompt manager
-console.log('Initializing Focused ChatGPT Prompt Manager...');
-new ChatGPTPromptManager();
+// Initialize the prompt manager with error handling
+try {
+  console.log('Initializing Focused ChatGPT Prompt Manager...');
+  new ChatGPTPromptManager();
+} catch (error) {
+  console.error('Error initializing ChatGPT Prompt Manager:', error);
+}
