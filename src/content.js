@@ -5,157 +5,212 @@ class ChatGPTPromptManager {
     this.overlayContainer = null;
     this.currentView = 'library';
     this.prompts = [];
+    this.retryCount = 0;
+    this.maxRetries = 20;
     this.init();
   }
 
   init() {
     console.log("✅ ChatGPT Prompt Manager loaded!");
+    
+    // Wait for page to be fully loaded
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => this.injectPromptManager());
+      document.addEventListener('DOMContentLoaded', () => this.startInjection());
     } else {
-      this.injectPromptManager();
+      this.startInjection();
     }
   }
 
-  async injectPromptManager() {
-    if (this.isInjected) return;
-
-    // Wait for ChatGPT interface to load
-    await this.waitForChatGPTInterface();
-    
-    // Load prompts from storage
-    await this.loadPrompts();
-    
-    // Inject input icons
-    this.injectInputIcons();
-    
-    // Create overlay container
-    this.createOverlayContainer();
-    
-    // Listen for messages from popup
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (request.action === 'insertPrompt') {
-        this.insertPrompt(request.prompt);
-      }
-    });
-
-    this.isInjected = true;
+  startInjection() {
+    // Start trying to inject after a short delay
+    setTimeout(() => {
+      this.tryInjectPromptManager();
+    }, 2000);
   }
 
-  waitForChatGPTInterface() {
-    return new Promise((resolve) => {
-      const checkForInterface = () => {
-        const textarea = document.querySelector('[data-testid="composer-text-input"]') ||
-                        document.querySelector('textarea[placeholder*="Message"]');
-        if (textarea) {
-          resolve();
-        } else {
-          setTimeout(checkForInterface, 500);
+  async tryInjectPromptManager() {
+    if (this.isInjected || this.retryCount >= this.maxRetries) return;
+
+    console.log(`Injection attempt ${this.retryCount + 1}/${this.maxRetries}`);
+    
+    // Look for ChatGPT's input elements with multiple selectors
+    const inputSelectors = [
+      '[data-testid="composer-text-input"]',
+      'textarea[placeholder*="Message"]',
+      'textarea[placeholder*="Send a message"]',
+      '#prompt-textarea',
+      'div[contenteditable="true"]',
+      'textarea'
+    ];
+
+    let inputElement = null;
+    let inputContainer = null;
+
+    // Try each selector
+    for (const selector of inputSelectors) {
+      inputElement = document.querySelector(selector);
+      if (inputElement) {
+        console.log(`Found input element with selector: ${selector}`);
+        
+        // Find the container - try multiple approaches
+        inputContainer = inputElement.closest('form') ||
+                        inputElement.closest('div[class*="relative"]') ||
+                        inputElement.closest('div[class*="flex"]') ||
+                        inputElement.parentElement;
+        
+        if (inputContainer) {
+          console.log('Found input container');
+          break;
         }
-      };
-      checkForInterface();
-    });
+      }
+    }
+
+    if (!inputElement || !inputContainer) {
+      this.retryCount++;
+      console.log('Input element or container not found, retrying...');
+      setTimeout(() => this.tryInjectPromptManager(), 3000);
+      return;
+    }
+
+    // Check if already injected
+    if (document.querySelector('#prompt-manager-icons')) {
+      console.log('Icons already injected');
+      this.isInjected = true;
+      return;
+    }
+
+    try {
+      // Load prompts from storage
+      await this.loadPrompts();
+      
+      // Inject input icons
+      this.injectInputIcons(inputContainer, inputElement);
+      
+      // Create overlay container
+      this.createOverlayContainer();
+      
+      // Listen for messages from popup
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'insertPrompt') {
+          this.insertPrompt(request.prompt);
+        }
+      });
+
+      this.isInjected = true;
+      console.log('✅ ChatGPT Prompt Manager successfully injected!');
+      
+    } catch (error) {
+      console.error('Error during injection:', error);
+      this.retryCount++;
+      setTimeout(() => this.tryInjectPromptManager(), 3000);
+    }
   }
 
   async loadPrompts() {
     try {
       const result = await chrome.storage.local.get(['prompts']);
       this.prompts = result.prompts || this.getDefaultPrompts();
+      console.log(`Loaded ${this.prompts.length} prompts`);
     } catch (error) {
       console.error('Error loading prompts:', error);
       this.prompts = this.getDefaultPrompts();
     }
   }
 
-  injectInputIcons() {
-    const findAndInjectIcons = () => {
-      // Look for the ChatGPT input container
-      const inputContainer = document.querySelector('[data-testid="composer-text-input"]')?.closest('div[class*="relative"]') ||
-                           document.querySelector('form')?.querySelector('div[class*="relative"]');
-      
-      if (!inputContainer || document.querySelector('#prompt-manager-icons')) {
-        setTimeout(findAndInjectIcons, 1000);
-        return;
-      }
+  injectInputIcons(inputContainer, inputElement) {
+    console.log('Injecting input icons...');
+    
+    // Create icons container
+    const iconsContainer = document.createElement('div');
+    iconsContainer.id = 'prompt-manager-icons';
+    iconsContainer.style.cssText = `
+      position: absolute;
+      right: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 6px;
+      z-index: 1000;
+      align-items: center;
+      pointer-events: auto;
+    `;
 
-      // Create icons container
-      const iconsContainer = document.createElement('div');
-      iconsContainer.id = 'prompt-manager-icons';
-      iconsContainer.style.cssText = `
-        position: absolute;
-        right: 50px;
-        top: 50%;
-        transform: translateY(-50%);
-        display: flex;
-        gap: 8px;
-        z-index: 1000;
-        align-items: center;
-      `;
+    // Library icon
+    const libraryIcon = this.createIcon('library', `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>
+    `, 'Prompt Library', '#3B82F6');
 
-      // Craft icon
-      const craftIcon = this.createIcon('craft', `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-        </svg>
-      `, 'Prompt Craft');
+    // Craft icon
+    const craftIcon = this.createIcon('craft', `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+    `, 'Prompt Craft', '#F59E0B');
 
-      // Library icon
-      const libraryIcon = this.createIcon('library', `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-        </svg>
-      `, 'Prompt Library');
+    // Bookmark icon
+    const bookmarkIcon = this.createIcon('bookmarks', `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+      </svg>
+    `, 'Bookmarks', '#EF4444');
 
-      // Bookmark icon
-      const bookmarkIcon = this.createIcon('bookmarks', `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-        </svg>
-      `, 'Bookmarks');
+    iconsContainer.appendChild(libraryIcon);
+    iconsContainer.appendChild(craftIcon);
+    iconsContainer.appendChild(bookmarkIcon);
 
-      iconsContainer.appendChild(libraryIcon);
-      iconsContainer.appendChild(craftIcon);
-      iconsContainer.appendChild(bookmarkIcon);
-
-      // Insert icons into the input container
+    // Make sure the container is positioned relatively
+    if (getComputedStyle(inputContainer).position === 'static') {
       inputContainer.style.position = 'relative';
-      inputContainer.appendChild(iconsContainer);
-    };
+    }
 
-    findAndInjectIcons();
+    // Insert icons into the input container
+    inputContainer.appendChild(iconsContainer);
+    
+    console.log('Icons injected successfully');
   }
 
-  createIcon(type, svgContent, tooltip) {
+  createIcon(type, svgContent, tooltip, color) {
     const icon = document.createElement('button');
     icon.innerHTML = svgContent;
     icon.title = tooltip;
+    icon.setAttribute('data-type', type);
     icon.style.cssText = `
-      background: transparent;
-      border: none;
+      background: white;
+      border: 1px solid #e5e7eb;
       color: #6b7280;
       cursor: pointer;
-      padding: 6px;
-      border-radius: 6px;
+      padding: 8px;
+      border-radius: 8px;
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      min-width: 36px;
+      min-height: 36px;
     `;
 
     icon.addEventListener('mouseenter', () => {
-      icon.style.color = '#10B981';
-      icon.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+      icon.style.color = color;
+      icon.style.borderColor = color;
+      icon.style.backgroundColor = color + '10';
+      icon.style.transform = 'scale(1.05)';
     });
 
     icon.addEventListener('mouseleave', () => {
       icon.style.color = '#6b7280';
-      icon.style.backgroundColor = 'transparent';
+      icon.style.borderColor = '#e5e7eb';
+      icon.style.backgroundColor = 'white';
+      icon.style.transform = 'scale(1)';
     });
 
     icon.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      console.log(`${type} icon clicked`);
       this.showOverlay(type);
     });
 
@@ -172,28 +227,31 @@ class ChatGPTPromptManager {
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 10000;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 999999;
       display: none;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(4px);
+      backdrop-filter: blur(8px);
+      padding: 20px;
+      box-sizing: border-box;
     `;
 
     // Create main panel
     const panel = document.createElement('div');
     panel.style.cssText = `
       background: white;
-      border-radius: 16px;
-      width: 90vw;
+      border-radius: 20px;
+      width: 100%;
       max-width: 1200px;
-      height: 80vh;
+      height: 90vh;
       max-height: 800px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
       position: relative;
+      animation: slideUp 0.3s ease-out;
     `;
 
     // Create header
@@ -201,23 +259,24 @@ class ChatGPTPromptManager {
     header.style.cssText = `
       background: linear-gradient(135deg, #10B981, #059669);
       color: white;
-      padding: 20px 24px;
+      padding: 24px;
       display: flex;
       align-items: center;
-      justify-content: between;
+      justify-content: space-between;
+      border-radius: 20px 20px 0 0;
     `;
 
     header.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 32px; height: 32px; background: rgba(255, 255, 255, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-          📝
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="width: 40px; height: 40px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+          ✨
         </div>
         <div>
-          <h1 style="margin: 0; font-size: 20px; font-weight: 600;">ChatGPT Prompt Manager</h1>
-          <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9;">Enhance your ChatGPT experience</p>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 700;">ChatGPT Prompt Manager</h1>
+          <p style="margin: 4px 0 0 0; font-size: 16px; opacity: 0.9;">Enhance your ChatGPT experience with powerful prompts</p>
         </div>
       </div>
-      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-left: auto;">×</button>
+      <button id="close-overlay" style="background: rgba(255, 255, 255, 0.2); border: none; color: white; width: 40px; height: 40px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: background 0.2s ease;">×</button>
     `;
 
     // Create navigation tabs
@@ -239,24 +298,39 @@ class ChatGPTPromptManager {
     tabs.forEach(tab => {
       const tabButton = document.createElement('button');
       tabButton.innerHTML = `
-        <span style="margin-right: 8px;">${tab.icon}</span>
-        ${tab.label}
+        <span style="margin-right: 10px; font-size: 16px;">${tab.icon}</span>
+        <span style="font-weight: 600;">${tab.label}</span>
       `;
       tabButton.style.cssText = `
         background: none;
         border: none;
-        padding: 16px 20px;
+        padding: 20px 24px;
         cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
+        font-size: 15px;
         color: #6b7280;
-        border-bottom: 2px solid transparent;
+        border-bottom: 3px solid transparent;
         transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
       `;
 
       tabButton.addEventListener('click', () => {
         this.switchTab(tab.id);
         this.updateTabStyles(nav, tab.id);
+      });
+
+      tabButton.addEventListener('mouseenter', () => {
+        if (!tabButton.classList.contains('active')) {
+          tabButton.style.color = '#374151';
+          tabButton.style.backgroundColor = 'rgba(16, 185, 129, 0.05)';
+        }
+      });
+
+      tabButton.addEventListener('mouseleave', () => {
+        if (!tabButton.classList.contains('active')) {
+          tabButton.style.color = '#6b7280';
+          tabButton.style.backgroundColor = 'transparent';
+        }
       });
 
       nav.appendChild(tabButton);
@@ -268,7 +342,8 @@ class ChatGPTPromptManager {
     content.style.cssText = `
       flex: 1;
       overflow-y: auto;
-      padding: 24px;
+      padding: 32px;
+      background: #fafafa;
     `;
 
     // Assemble panel
@@ -281,7 +356,15 @@ class ChatGPTPromptManager {
     document.body.appendChild(this.overlayContainer);
 
     // Add event listeners
-    header.querySelector('#close-overlay').addEventListener('click', () => this.hideOverlay());
+    const closeBtn = header.querySelector('#close-overlay');
+    closeBtn.addEventListener('click', () => this.hideOverlay());
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+    });
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+    });
+
     this.overlayContainer.addEventListener('click', (e) => {
       if (e.target === this.overlayContainer) {
         this.hideOverlay();
@@ -290,12 +373,14 @@ class ChatGPTPromptManager {
 
     // Initialize with library view
     this.updateTabStyles(nav, 'library');
+    
+    console.log('Overlay container created');
   }
 
   showOverlay(view = 'library') {
+    console.log(`Showing overlay with view: ${view}`);
     this.currentView = view;
     this.overlayContainer.style.display = 'flex';
-    this.overlayContainer.style.animation = 'fadeIn 0.3s ease-out';
     
     // Update tab styles
     const nav = this.overlayContainer.querySelector('div[style*="background: #f8fafc"]');
@@ -309,14 +394,13 @@ class ChatGPTPromptManager {
   }
 
   hideOverlay() {
-    this.overlayContainer.style.animation = 'fadeOut 0.3s ease-in';
-    setTimeout(() => {
-      this.overlayContainer.style.display = 'none';
-      document.body.style.overflow = '';
-    }, 300);
+    console.log('Hiding overlay');
+    this.overlayContainer.style.display = 'none';
+    document.body.style.overflow = '';
   }
 
   switchTab(tabId) {
+    console.log(`Switching to tab: ${tabId}`);
     this.currentView = tabId;
     this.renderContent();
   }
@@ -327,6 +411,7 @@ class ChatGPTPromptManager {
     
     buttons.forEach((button, index) => {
       const isActive = tabs[index] === activeTab;
+      button.classList.toggle('active', isActive);
       button.style.color = isActive ? '#10B981' : '#6b7280';
       button.style.borderBottomColor = isActive ? '#10B981' : 'transparent';
       button.style.backgroundColor = isActive ? 'white' : 'transparent';
@@ -335,6 +420,7 @@ class ChatGPTPromptManager {
 
   renderContent() {
     const content = document.getElementById('overlay-content');
+    if (!content) return;
     
     switch (this.currentView) {
       case 'library':
@@ -347,30 +433,37 @@ class ChatGPTPromptManager {
         this.renderCraft(content);
         break;
     }
+    
+    // Add event listeners after rendering
+    setTimeout(() => this.addPromptCardListeners(), 100);
   }
 
   renderLibrary(container) {
-    const bookmarkedPrompts = this.prompts.filter(p => p.isBookmarked);
-    const allPrompts = this.prompts;
-
     container.innerHTML = `
-      <div style="margin-bottom: 24px;">
-        <div style="position: relative; margin-bottom: 20px;">
+      <div style="margin-bottom: 32px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+          <div>
+            <h2 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; color: #1f2937;">Prompt Library</h2>
+            <p style="margin: 0; color: #6b7280; font-size: 16px;">Discover and use powerful prompts to enhance your conversations</p>
+          </div>
+        </div>
+        
+        <div style="position: relative; margin-bottom: 24px;">
           <input 
             type="text" 
             id="prompt-search" 
-            placeholder="Search prompts..." 
-            style="width: 100%; padding: 12px 16px 12px 44px; border: 1px solid #d1d5db; border-radius: 12px; font-size: 14px; outline: none; transition: border-color 0.2s ease;"
+            placeholder="Search prompts by title, content, or tags..." 
+            style="width: 100%; padding: 16px 20px 16px 52px; border: 2px solid #e5e7eb; border-radius: 16px; font-size: 16px; outline: none; transition: all 0.2s ease; background: white;"
           />
-          <svg style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #9ca3af;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: #9ca3af;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
             <path d="m21 21-4.35-4.35"/>
           </svg>
         </div>
       </div>
       
-      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px;" id="prompts-grid">
-        ${allPrompts.map(prompt => this.renderPromptCard(prompt)).join('')}
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px;" id="prompts-grid">
+        ${this.prompts.map(prompt => this.renderPromptCard(prompt)).join('')}
       </div>
     `;
 
@@ -383,11 +476,11 @@ class ChatGPTPromptManager {
     // Add focus styles
     searchInput.addEventListener('focus', () => {
       searchInput.style.borderColor = '#10B981';
-      searchInput.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.1)';
+      searchInput.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.1)';
     });
 
     searchInput.addEventListener('blur', () => {
-      searchInput.style.borderColor = '#d1d5db';
+      searchInput.style.borderColor = '#e5e7eb';
       searchInput.style.boxShadow = 'none';
     });
   }
@@ -396,19 +489,19 @@ class ChatGPTPromptManager {
     const bookmarkedPrompts = this.prompts.filter(p => p.isBookmarked);
 
     container.innerHTML = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #1f2937;">Bookmarked Prompts</h2>
-        <p style="margin: 0; color: #6b7280;">Your saved prompts for quick access</p>
+      <div style="margin-bottom: 32px;">
+        <h2 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; color: #1f2937;">Bookmarked Prompts</h2>
+        <p style="margin: 0; color: #6b7280; font-size: 16px;">Your saved prompts for quick access</p>
       </div>
       
       ${bookmarkedPrompts.length === 0 ? `
-        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
-          <div style="font-size: 48px; margin-bottom: 16px;">🔖</div>
-          <h3 style="margin: 0 0 8px 0; font-size: 18px; color: #374151;">No bookmarks yet</h3>
-          <p style="margin: 0;">Bookmark prompts from the library to access them quickly</p>
+        <div style="text-align: center; padding: 80px 20px; color: #6b7280;">
+          <div style="font-size: 64px; margin-bottom: 24px;">🔖</div>
+          <h3 style="margin: 0 0 12px 0; font-size: 24px; color: #374151;">No bookmarks yet</h3>
+          <p style="margin: 0; font-size: 16px;">Bookmark prompts from the library to access them quickly</p>
         </div>
       ` : `
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 24px;">
           ${bookmarkedPrompts.map(prompt => this.renderPromptCard(prompt)).join('')}
         </div>
       `}
@@ -417,71 +510,73 @@ class ChatGPTPromptManager {
 
   renderCraft(container) {
     container.innerHTML = `
-      <div style="max-width: 800px; margin: 0 auto;">
-        <div style="margin-bottom: 32px; text-align: center;">
-          <h2 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 600; color: #1f2937;">Prompt Craft</h2>
-          <p style="margin: 0; color: #6b7280; font-size: 16px;">Transform your prompts into powerful, precise instructions</p>
+      <div style="max-width: 900px; margin: 0 auto;">
+        <div style="margin-bottom: 40px; text-align: center;">
+          <h2 style="margin: 0 0 12px 0; font-size: 32px; font-weight: 700; color: #1f2937;">Prompt Craft</h2>
+          <p style="margin: 0; color: #6b7280; font-size: 18px;">Transform your prompts into powerful, precise instructions</p>
         </div>
 
-        <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
-          <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+        <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 20px; padding: 32px; margin-bottom: 32px; border: 1px solid #bae6fd;">
+          <h3 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 600; color: #0f172a; display: flex; align-items: center; gap: 12px;">
             🎯 Enhancement Techniques
           </h3>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
-            <label style="display: flex; align-items: start; gap: 12px; cursor: pointer; padding: 12px; background: white; border-radius: 12px; border: 1px solid #e2e8f0;">
-              <input type="checkbox" style="margin-top: 2px;" />
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
+              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2);" />
               <div>
-                <div style="font-weight: 500; color: #1e293b; margin-bottom: 4px;">Clarity Enhancement</div>
-                <div style="font-size: 13px; color: #64748b;">Make the prompt more specific and clear</div>
+                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px; font-size: 15px;">Clarity Enhancement</div>
+                <div style="font-size: 14px; color: #64748b; line-height: 1.4;">Make the prompt more specific and clear</div>
               </div>
             </label>
-            <label style="display: flex; align-items: start; gap: 12px; cursor: pointer; padding: 12px; background: white; border-radius: 12px; border: 1px solid #e2e8f0;">
-              <input type="checkbox" style="margin-top: 2px;" />
+            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
+              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2);" />
               <div>
-                <div style="font-weight: 500; color: #1e293b; margin-bottom: 4px;">Context Addition</div>
-                <div style="font-size: 13px; color: #64748b;">Add relevant background information</div>
+                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px; font-size: 15px;">Context Addition</div>
+                <div style="font-size: 14px; color: #64748b; line-height: 1.4;">Add relevant background information</div>
               </div>
             </label>
-            <label style="display: flex; align-items: start; gap: 12px; cursor: pointer; padding: 12px; background: white; border-radius: 12px; border: 1px solid #e2e8f0;">
-              <input type="checkbox" style="margin-top: 2px;" />
+            <label style="display: flex; align-items: start; gap: 16px; cursor: pointer; padding: 16px; background: white; border-radius: 16px; border: 2px solid #e2e8f0; transition: all 0.2s ease;">
+              <input type="checkbox" style="margin-top: 4px; transform: scale(1.2);" />
               <div>
-                <div style="font-weight: 500; color: #1e293b; margin-bottom: 4px;">Example Integration</div>
-                <div style="font-size: 13px; color: #64748b;">Include helpful examples</div>
+                <div style="font-weight: 600; color: #1e293b; margin-bottom: 6px; font-size: 15px;">Example Integration</div>
+                <div style="font-size: 14px; color: #64748b; line-height: 1.4;">Include helpful examples</div>
               </div>
             </label>
           </div>
         </div>
 
-        <div style="margin-bottom: 24px;">
-          <label style="display: block; font-weight: 500; color: #374151; margin-bottom: 8px;">Original Prompt</label>
+        <div style="margin-bottom: 32px;">
+          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px; font-size: 16px;">Original Prompt</label>
           <textarea 
             id="original-prompt" 
             placeholder="Enter your original prompt here..."
-            style="width: 100%; height: 120px; padding: 16px; border: 1px solid #d1d5db; border-radius: 12px; font-size: 14px; resize: vertical; outline: none; transition: border-color 0.2s ease;"
+            style="width: 100%; height: 140px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; resize: vertical; outline: none; transition: all 0.2s ease; font-family: inherit; line-height: 1.5;"
           ></textarea>
         </div>
 
-        <div style="text-align: center; margin-bottom: 24px;">
-          <button id="improve-prompt" style="background: linear-gradient(135deg, #10B981, #059669); color: white; border: none; padding: 14px 32px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s ease; display: inline-flex; align-items: center; gap: 8px;">
-            <span>✨</span>
+        <div style="text-align: center; margin-bottom: 32px;">
+          <button id="improve-prompt" style="background: linear-gradient(135deg, #10B981, #059669); color: white; border: none; padding: 18px 40px; border-radius: 16px; font-size: 18px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+            <span style="font-size: 20px;">✨</span>
             Improve Prompt
           </button>
         </div>
 
         <div id="improved-prompt-container" style="display: none;">
-          <label style="display: block; font-weight: 500; color: #374151; margin-bottom: 8px;">Improved Prompt</label>
+          <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 12px; font-size: 16px;">Improved Prompt</label>
           <div style="position: relative;">
             <textarea 
               id="improved-prompt" 
               readonly
-              style="width: 100%; height: 200px; padding: 16px; border: 1px solid #d1d5db; border-radius: 12px; font-size: 14px; background: #f9fafb; resize: vertical;"
+              style="width: 100%; height: 240px; padding: 20px; border: 2px solid #d1d5db; border-radius: 16px; font-size: 16px; background: #f9fafb; resize: vertical; font-family: inherit; line-height: 1.5;"
             ></textarea>
-            <button id="copy-improved" style="position: absolute; top: 12px; right: 12px; background: white; border: 1px solid #d1d5db; padding: 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 12px;">
-              📋 Copy
-            </button>
-            <button id="use-improved" style="position: absolute; top: 12px; right: 80px; background: #10B981; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 12px;">
-              Use Prompt
-            </button>
+            <div style="position: absolute; top: 16px; right: 16px; display: flex; gap: 8px;">
+              <button id="copy-improved" style="background: white; border: 2px solid #d1d5db; padding: 10px 16px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; transition: all 0.2s ease;">
+                📋 Copy
+              </button>
+              <button id="use-improved" style="background: #10B981; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease;">
+                Use Prompt
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -498,7 +593,7 @@ class ChatGPTPromptManager {
     // Focus styles for textarea
     originalTextarea.addEventListener('focus', () => {
       originalTextarea.style.borderColor = '#10B981';
-      originalTextarea.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.1)';
+      originalTextarea.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.1)';
     });
 
     originalTextarea.addEventListener('blur', () => {
@@ -509,17 +604,19 @@ class ChatGPTPromptManager {
     // Improve button hover
     improveBtn.addEventListener('mouseenter', () => {
       improveBtn.style.transform = 'translateY(-2px)';
+      improveBtn.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.4)';
     });
 
     improveBtn.addEventListener('mouseleave', () => {
       improveBtn.style.transform = 'translateY(0)';
+      improveBtn.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
     });
 
     improveBtn.addEventListener('click', () => {
       const originalText = originalTextarea.value.trim();
       if (!originalText) return;
 
-      improveBtn.innerHTML = '<span>⏳</span> Improving...';
+      improveBtn.innerHTML = '<span style="font-size: 20px;">⏳</span> Improving...';
       improveBtn.disabled = true;
 
       setTimeout(() => {
@@ -547,7 +644,7 @@ Please ensure your response:
 
         improvedTextarea.value = improved;
         improvedContainer.style.display = 'block';
-        improveBtn.innerHTML = '<span>✨</span> Improve Prompt';
+        improveBtn.innerHTML = '<span style="font-size: 20px;">✨</span> Improve Prompt';
         improveBtn.disabled = false;
       }, 2000);
     });
@@ -564,57 +661,72 @@ Please ensure your response:
       this.insertPrompt(improvedTextarea.value);
       this.hideOverlay();
     });
+
+    // Add hover effects to enhancement technique labels
+    const labels = container.querySelectorAll('label');
+    labels.forEach(label => {
+      label.addEventListener('mouseenter', () => {
+        label.style.borderColor = '#10B981';
+        label.style.backgroundColor = '#f0fdf4';
+      });
+      label.addEventListener('mouseleave', () => {
+        label.style.borderColor = '#e2e8f0';
+        label.style.backgroundColor = 'white';
+      });
+    });
   }
 
   renderPromptCard(prompt) {
     return `
       <div class="prompt-card" style="
         background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 16px;
-        padding: 20px;
+        border: 2px solid #f1f5f9;
+        border-radius: 20px;
+        padding: 24px;
         transition: all 0.3s ease;
         cursor: pointer;
         position: relative;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       " data-prompt='${JSON.stringify(prompt).replace(/'/g, "&#39;")}'>
-        <div style="display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px;">
-          <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #1f2937; line-height: 1.4; flex: 1;">${prompt.title}</h3>
+        <div style="display: flex; align-items: start; justify-content: space-between; margin-bottom: 16px;">
+          <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: #1f2937; line-height: 1.4; flex: 1; padding-right: 12px;">${prompt.title}</h3>
           <button class="bookmark-btn" style="
             background: none;
             border: none;
             color: ${prompt.isBookmarked ? '#f59e0b' : '#d1d5db'};
             cursor: pointer;
-            padding: 4px;
-            border-radius: 4px;
-            margin-left: 8px;
+            padding: 6px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
           ">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="${prompt.isBookmarked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="${prompt.isBookmarked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
               <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
             </svg>
           </button>
         </div>
         
-        <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+        <p style="margin: 0 0 20px 0; color: #6b7280; font-size: 15px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
           ${prompt.content}
         </p>
         
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
           <span style="
             background: ${this.getCategoryColor(prompt.category)};
             color: white;
-            padding: 4px 12px;
+            padding: 6px 16px;
             border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
+            font-size: 13px;
+            font-weight: 600;
           ">${prompt.category}</span>
-          <span style="font-size: 12px; color: #9ca3af;">${prompt.usage} uses</span>
+          <span style="font-size: 13px; color: #9ca3af; font-weight: 500;">${prompt.usage} uses</span>
         </div>
         
-        <div style="display: flex; flex-wrap: gap: 6px; margin-bottom: 16px;">
+        <div style="display: flex; flex-wrap: gap: 8px; margin-bottom: 20px;">
           ${prompt.tags.slice(0, 3).map(tag => `
-            <span style="background: #f3f4f6; color: #6b7280; padding: 2px 8px; border-radius: 12px; font-size: 11px;">${tag}</span>
+            <span style="background: #f3f4f6; color: #6b7280; padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: 500;">${tag}</span>
           `).join('')}
-          ${prompt.tags.length > 3 ? `<span style="color: #9ca3af; font-size: 11px;">+${prompt.tags.length - 3}</span>` : ''}
+          ${prompt.tags.length > 3 ? `<span style="color: #9ca3af; font-size: 12px; font-weight: 500;">+${prompt.tags.length - 3}</span>` : ''}
         </div>
         
         <button class="use-prompt-btn" style="
@@ -622,12 +734,13 @@ Please ensure your response:
           background: linear-gradient(135deg, #10B981, #059669);
           color: white;
           border: none;
-          padding: 12px;
-          border-radius: 10px;
-          font-size: 14px;
-          font-weight: 500;
+          padding: 14px;
+          border-radius: 12px;
+          font-size: 15px;
+          font-weight: 600;
           cursor: pointer;
           transition: all 0.2s ease;
+          box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
         ">
           Use Prompt
         </button>
@@ -655,18 +768,28 @@ Please ensure your response:
       // Hover effects
       card.addEventListener('mouseenter', () => {
         card.style.borderColor = '#10B981';
-        card.style.boxShadow = '0 8px 25px rgba(16, 185, 129, 0.15)';
-        card.style.transform = 'translateY(-2px)';
+        card.style.boxShadow = '0 8px 32px rgba(16, 185, 129, 0.15)';
+        card.style.transform = 'translateY(-4px)';
       });
 
       card.addEventListener('mouseleave', () => {
-        card.style.borderColor = '#e5e7eb';
-        card.style.boxShadow = 'none';
+        card.style.borderColor = '#f1f5f9';
+        card.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
         card.style.transform = 'translateY(0)';
       });
 
       // Use prompt button
       const useBtn = card.querySelector('.use-prompt-btn');
+      useBtn.addEventListener('mouseenter', () => {
+        useBtn.style.background = 'linear-gradient(135deg, #059669, #047857)';
+        useBtn.style.transform = 'translateY(-1px)';
+      });
+
+      useBtn.addEventListener('mouseleave', () => {
+        useBtn.style.background = 'linear-gradient(135deg, #10B981, #059669)';
+        useBtn.style.transform = 'translateY(0)';
+      });
+
       useBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const promptData = JSON.parse(card.getAttribute('data-prompt'));
@@ -676,6 +799,14 @@ Please ensure your response:
 
       // Bookmark button
       const bookmarkBtn = card.querySelector('.bookmark-btn');
+      bookmarkBtn.addEventListener('mouseenter', () => {
+        bookmarkBtn.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+      });
+
+      bookmarkBtn.addEventListener('mouseleave', () => {
+        bookmarkBtn.style.backgroundColor = 'transparent';
+      });
+
       bookmarkBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const promptData = JSON.parse(card.getAttribute('data-prompt'));
@@ -694,7 +825,6 @@ Please ensure your response:
     
     // Re-render current view
     this.renderContent();
-    this.addPromptCardListeners();
   }
 
   getCategoryColor(category) {
@@ -710,28 +840,55 @@ Please ensure your response:
   }
 
   insertPrompt(promptContent) {
-    // Find ChatGPT's textarea
-    const textarea = document.querySelector('[data-testid="composer-text-input"]') || 
-                    document.querySelector('textarea[placeholder*="Message"]');
+    console.log('Inserting prompt:', promptContent.substring(0, 50) + '...');
+    
+    // Find ChatGPT's textarea with multiple selectors
+    const selectors = [
+      '[data-testid="composer-text-input"]',
+      'textarea[placeholder*="Message"]',
+      'textarea[placeholder*="Send a message"]',
+      '#prompt-textarea',
+      'div[contenteditable="true"]'
+    ];
+
+    let textarea = null;
+    for (const selector of selectors) {
+      textarea = document.querySelector(selector);
+      if (textarea) {
+        console.log(`Found textarea with selector: ${selector}`);
+        break;
+      }
+    }
     
     if (textarea) {
-      // Set the value
-      textarea.value = promptContent;
-      textarea.textContent = promptContent;
+      // Handle both textarea and contenteditable elements
+      if (textarea.tagName === 'TEXTAREA') {
+        textarea.value = promptContent;
+        textarea.focus();
+        textarea.setSelectionRange(promptContent.length, promptContent.length);
+      } else if (textarea.contentEditable === 'true') {
+        textarea.textContent = promptContent;
+        textarea.focus();
+        
+        // Set cursor to end for contenteditable
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(textarea);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
       
-      // Trigger input events
-      const inputEvent = new Event('input', { bubbles: true });
-      const changeEvent = new Event('change', { bubbles: true });
+      // Trigger events to notify ChatGPT
+      const events = ['input', 'change', 'keyup', 'paste'];
+      events.forEach(eventType => {
+        const event = new Event(eventType, { bubbles: true });
+        textarea.dispatchEvent(event);
+      });
       
-      textarea.dispatchEvent(inputEvent);
-      textarea.dispatchEvent(changeEvent);
-      
-      // Focus and set cursor
-      textarea.focus();
-      textarea.setSelectionRange(promptContent.length, promptContent.length);
-      
-      // Trigger any additional events that ChatGPT might need
-      textarea.dispatchEvent(new Event('keyup', { bubbles: true }));
+      console.log('Prompt inserted successfully');
+    } else {
+      console.error('Could not find ChatGPT textarea');
     }
   }
 
@@ -789,26 +946,19 @@ Please ensure your response:
 // Add CSS animations and styles
 const style = document.createElement('style');
 style.textContent = `
-  @keyframes fadeIn {
+  @keyframes slideUp {
     from {
       opacity: 0;
-      transform: scale(0.95);
+      transform: translateY(30px) scale(0.95);
     }
     to {
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(0) scale(1);
     }
   }
-  
-  @keyframes fadeOut {
-    from {
-      opacity: 1;
-      transform: scale(1);
-    }
-    to {
-      opacity: 0;
-      transform: scale(0.95);
-    }
+
+  #prompt-manager-overlay * {
+    box-sizing: border-box;
   }
 
   #prompt-manager-overlay .prompt-card:hover .use-prompt-btn {
@@ -819,8 +969,28 @@ style.textContent = `
   #prompt-manager-overlay .bookmark-btn:hover {
     color: #f59e0b !important;
   }
+
+  /* Scrollbar styling */
+  #prompt-manager-overlay ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #prompt-manager-overlay ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+  }
+
+  #prompt-manager-overlay ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+
+  #prompt-manager-overlay ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 `;
 document.head.appendChild(style);
 
 // Initialize the prompt manager
+console.log('Initializing ChatGPT Prompt Manager...');
 new ChatGPTPromptManager();
